@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+venv/
+ENV/
+
+# PyInstaller / Build
+build/
+dist/
+*.spec
+
+# Application Storage & Profiles
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/outputs/*
+!storage/outputs/.gitkeep
+storage/browser_profile/
+storage/queue.json
+
+# Logs & Environment
+*.log
+.env
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+*.tempmediaStorage/
