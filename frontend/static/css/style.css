@@ -988,14 +988,59 @@ textarea {
     border-radius: var(--border-radius-lg);
     width: 90%;
     max-width: 500px; /* Thích hợp cho cả tỷ lệ dọc 9:16 */
-    max-height: 85vh;
+    max-height: 90vh;
     box-shadow: var(--shadow-lg), 0 0 30px rgba(99, 102, 241, 0.2);
-    overflow: hidden;
+    overflow-y: auto;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    justify-content: flex-start;
     align-items: center;
     transform: scale(0.9);
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-caption-box {
+    width: 100%;
+    background: #0f172a;
+    border-top: 1px solid var(--card-border);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+}
+
+.caption-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.btn-sm {
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    border-radius: var(--border-radius-sm);
+}
+
+.caption-text {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px 12px;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.hashtags-text {
+    font-size: 0.8rem;
+    color: #6366f1;
+    font-weight: 500;
+    word-break: break-word;
 }
 
 .modal.show .modal-content {

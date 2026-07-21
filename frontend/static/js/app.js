@@ -266,6 +266,11 @@ function initActionButtons() {
     document.getElementById("btn-start").addEventListener("click", () => controlQueue("start"));
     document.getElementById("btn-stop").addEventListener("click", () => controlQueue("stop"));
     document.getElementById("btn-login").addEventListener("click", () => controlQueue("open-login"));
+    document.getElementById("btn-switch-account")?.addEventListener("click", async () => {
+        if (confirm("Bạn có chắc chắn muốn đăng xuất và đổi tài khoản Google / Gemini khác không?")) {
+            await controlQueue("switch-account");
+        }
+    });
 }
 
 async function controlQueue(action) {
@@ -378,9 +383,11 @@ function updateQueueList(queue) {
 
         const canEdit = task.status === "pending" || task.status === "failed";
         const canRetry = task.status === "completed" || task.status === "failed";
+        const hasCaption = !!(task.caption || task.hashtags);
         
         let actionsHtml = `
             <div class="task-actions">
+                ${hasCaption ? `<button onclick="copyTaskCaption('${task.id}')" class="btn-task-action btn-copy-caption" style="background:#4f46e5; color:#fff;" title="Sao chép bài đăng">📋 Copy Post</button>` : ''}
                 ${canEdit ? `<button onclick="editTaskPrompt('${task.id}')" class="btn-task-action btn-edit" title="Sửa thông tin">✏️ Sửa</button>` : ''}
                 ${canRetry ? `<button onclick="retryTask('${task.id}')" class="btn-task-action btn-retry" title="Chạy lại">🔄 Chạy lại</button>` : ''}
                 <button onclick="deleteTask('${task.id}', '${task.status}')" class="btn-task-action btn-delete" title="Xóa nhiệm vụ">🗑️ Xóa</button>
@@ -424,27 +431,51 @@ async function loadVideos() {
         }
 
         let html = "";
-        videos.forEach(video => {
+        videos.forEach((video, index) => {
             html += `
-                <div class="video-item">
+                <div class="video-item" data-index="${index}">
                     <div class="video-wrapper" data-url="${video.url}">
                         <video src="${video.url}" preload="metadata"></video>
                     </div>
                     <div class="video-info">
                         <div class="video-name" title="${video.filename}">${video.filename}</div>
-                        <a href="${video.url}" download class="btn-download">💾 Tải về điện thoại</a>
+                        <div class="video-card-actions" style="display:flex; gap:6px; margin-top:4px;">
+                            <a href="${video.url}" download class="btn-download" style="flex:1; text-align:center;">💾 Tải về</a>
+                            <button class="btn-copy-card" data-index="${index}" style="padding:6px 10px; font-size:0.75rem; background:#4f46e5; color:white; border:none; border-radius:var(--border-radius-sm); cursor:pointer; font-weight:600; transition:all 0.2s ease;">📋 Copy Post</button>
+                        </div>
                     </div>
                 </div>
             `;
         });
         grid.innerHTML = html;
 
-        // Thêm sự kiện click mở modal cho từng video-wrapper
-        grid.querySelectorAll(".video-wrapper").forEach(wrapper => {
-            wrapper.addEventListener("click", () => {
-                const url = wrapper.getAttribute("data-url");
-                openVideoModal(url);
-            });
+        // Sự kiện click mở modal và nút copy bài đăng trực tiếp từ thẻ video
+        grid.querySelectorAll(".video-item").forEach((item, index) => {
+            const wrapper = item.querySelector(".video-wrapper");
+            const btnCopyCard = item.querySelector(".btn-copy-card");
+            const videoData = videos[index];
+            
+            if (wrapper && videoData) {
+                wrapper.addEventListener("click", () => {
+                    openVideoModal(videoData);
+                });
+            }
+
+            if (btnCopyCard && videoData) {
+                btnCopyCard.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (videoData.caption || videoData.hashtags) {
+                        const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
+                        navigator.clipboard.writeText(fullCopy).then(() => {
+                            showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+                        }).catch(() => {
+                            showToast("Không thể tự động sao chép.", true);
+                        });
+                    } else {
+                        showToast("Chưa có Caption đính kèm cho video này.", true);
+                    }
+                });
+            }
         });
     } catch (e) {
         console.error("Lỗi nạp thư viện video:", e);
@@ -477,15 +508,41 @@ function initVideoModal() {
     });
 }
 
-function openVideoModal(url) {
+function openVideoModal(videoData) {
     const modal = document.getElementById("video-modal");
     const player = document.getElementById("modal-video-player");
     const source = document.getElementById("modal-video-source");
+    const captionBox = document.getElementById("modal-caption-box");
+    const captionText = document.getElementById("modal-caption-text");
+    const hashtagsText = document.getElementById("modal-hashtags-text");
+    const btnCopy = document.getElementById("btn-copy-caption");
+
+    const url = typeof videoData === "string" ? videoData : videoData.url;
     
     if (!modal || !player || !source) return;
     
     source.setAttribute("src", url);
     player.load();
+
+    // Hiển thị Caption & Hashtags nếu có
+    if (typeof videoData === "object" && (videoData.caption || videoData.hashtags)) {
+        if (captionText) captionText.innerText = videoData.caption || "";
+        if (hashtagsText) hashtagsText.innerText = videoData.hashtags || "";
+        if (captionBox) captionBox.style.display = "flex";
+
+        if (btnCopy) {
+            btnCopy.onclick = () => {
+                const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
+                navigator.clipboard.writeText(fullCopy).then(() => {
+                    showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+                }).catch(() => {
+                    showToast("Lỗi khi sao chép tự động.", true);
+                });
+            };
+        }
+    } else {
+        if (captionBox) captionBox.style.display = "none";
+    }
     
     // Tự động căn chỉnh kích thước ngang/dọc dựa trên kích thước video thực tế
     const tempVideo = document.createElement("video");
@@ -584,7 +641,21 @@ function initLayoutResizer() {
     }
 }
 
-// 12. CÁC HÀM QUẢN LÝ NHIỆM VỤ (SỬA, XÓA, CHẠY LẠI)
+// 12. CÁC HÀM QUẢN LÝ NHIỆM VỤ (SỬA, XÓA, CHẠY LẠI, COPY CAPTION)
+window.copyTaskCaption = (taskId) => {
+    const task = latestQueueList.find(t => t.id === taskId);
+    if (!task || (!task.caption && !task.hashtags)) {
+        showToast("Chưa có nội dung Caption cho nhiệm vụ này.", true);
+        return;
+    }
+    const fullCopy = `${task.caption || ''}\n\n${task.hashtags || ''}`.trim();
+    navigator.clipboard.writeText(fullCopy).then(() => {
+        showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+    }).catch(() => {
+        showToast("Không thể tự động sao chép.", true);
+    });
+};
+
 window.deleteTask = async (taskId, status) => {
     let confirmMsg = "Bạn có chắc muốn xóa nhiệm vụ này khỏi hàng đợi không?";
     const isActive = status !== "pending" && status !== "completed" && status !== "failed";

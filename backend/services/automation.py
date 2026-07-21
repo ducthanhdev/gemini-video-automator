@@ -220,6 +220,20 @@ class AutomationManager:
         except Exception as e:
             logger.error(f"Không thể mở trang Gemini: {e}")
 
+    async def switch_account(self):
+        """Đăng xuất tài khoản Google hiện tại và chuyển sang màn hình đăng nhập tài khoản Gemini mới."""
+        await self.initialize()
+        self.status = "waiting_login"
+        if self.page:
+            try:
+                logger.info("Đang tiến hành đăng xuất tài khoản Google hiện tại...")
+                await self.page.goto("https://accounts.google.com/Logout")
+                await asyncio.sleep(2)
+                await self.page.goto("https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app")
+                logger.info("Đã mở trang đăng nhập tài khoản Google/Gemini mới.")
+            except Exception as e:
+                logger.error(f"Lỗi khi thực hiện đăng xuất/chuyển tài khoản: {e}")
+
     def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16") -> dict[str, Any]:
         """Thêm một nhiệm vụ tạo video mới vào hàng đợi."""
         task_id = str(uuid.uuid4())
@@ -387,7 +401,7 @@ class AutomationManager:
         
         # 2. Chạy Smart Prompt Optimizer
         api_key_to_use = self.api_key if self.prompt_mode == "api" else None
-        optimized = await asyncio.to_thread(
+        opt_res = await asyncio.to_thread(
             optimize_prompt,
             abs_image_paths,
             task["user_description"],
@@ -395,7 +409,16 @@ class AutomationManager:
             self.system_instruction,
             self.meta_prompt_template
         )
-        self.update_task(task, optimized_prompt=optimized, progress=10)
+        if isinstance(opt_res, dict):
+            optimized = opt_res.get("prompt", "")
+            caption = opt_res.get("caption", "")
+            hashtags = opt_res.get("hashtags", "")
+        else:
+            optimized = str(opt_res)
+            caption = ""
+            hashtags = ""
+
+        self.update_task(task, optimized_prompt=optimized, caption=caption, hashtags=hashtags, progress=10)
 
         # 3. Tính toán số lượng clip cần sinh dựa trên thời lượng
         # Mỗi clip mặc định dài CLIP_DURATION giây, đảm bảo tối thiểu là 1 clip
@@ -472,6 +495,46 @@ class AutomationManager:
                 
                 if not success or not final_output_path.exists():
                     raise Exception("Lỗi khi ghép nối các đoạn video ngắn thành video tổng hợp.")
+
+            # 5. Lưu trữ tệp thông tin JSON và TXT đính kèm theo video
+            meta_json_path = OUTPUT_DIR / f"video_{task['id']}.json"
+            meta_txt_path = OUTPUT_DIR / f"video_{task['id']}.txt"
+            
+            from datetime import datetime
+            import json
+            from backend.services.prompt_optimizer import parse_prompt_response
+            
+            caption_val = task.get("caption", "")
+            hashtags_val = task.get("hashtags", "")
+            prompt_val = task.get("optimized_prompt", "")
+            
+            # Nếu vì lý do nào đó caption/hashtags chưa được trích xuất, thử phân tách dự phòng
+            if not caption_val or not hashtags_val:
+                fallback_parsed = parse_prompt_response(prompt_val)
+                if fallback_parsed.get("caption"):
+                    caption_val = fallback_parsed["caption"]
+                    task["caption"] = caption_val
+                if fallback_parsed.get("hashtags"):
+                    hashtags_val = fallback_parsed["hashtags"]
+                    task["hashtags"] = hashtags_val
+                if fallback_parsed.get("prompt"):
+                    prompt_val = fallback_parsed["prompt"]
+                    task["optimized_prompt"] = prompt_val
+            
+            meta_data = {
+                "video_filename": output_filename,
+                "prompt": prompt_val,
+                "caption": caption_val,
+                "hashtags": hashtags_val,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            with open(meta_json_path, "w", encoding="utf-8") as f:
+                json.dump(meta_data, f, ensure_ascii=False, indent=2)
+                
+            txt_content = f"--- BÀI ĐĂNG CAPTION ---\n{caption_val}\n\n--- HASHTAGS ---\n{hashtags_val}\n\n--- PROMPT VIDEO ---\n{prompt_val}"
+            with open(meta_txt_path, "w", encoding="utf-8") as f:
+                f.write(txt_content)
 
             # Hoàn tất nhiệm vụ
             self.update_task(task, status="completed", progress=100, output_video=output_filename)
@@ -554,7 +617,10 @@ class AutomationManager:
                 await asyncio.sleep(1)
             
             # Trích xuất prompt tối ưu từ câu trả lời của Gemini
-            optimized_prompt = last_text.strip().strip('"').strip("'").strip()
+            from backend.services.prompt_optimizer import parse_prompt_response
+            parsed_dict = parse_prompt_response(last_text)
+            optimized_prompt = parsed_dict.get("prompt", "").strip()
+            
             if not optimized_prompt:
                 logger.warning("Không thể lấy prompt tối ưu từ Chat. Dùng prompt mặc định.")
                 optimized_prompt = f"A video of a product based on: {task['user_description']}"
@@ -562,6 +628,10 @@ class AutomationManager:
             logger.info(f"Đã nhận prompt tối ưu từ Chat: {optimized_prompt}")
             prompt = optimized_prompt
             task["optimized_prompt"] = optimized_prompt
+            if parsed_dict.get("caption"):
+                task["caption"] = parsed_dict["caption"]
+            if parsed_dict.get("hashtags"):
+                task["hashtags"] = parsed_dict["hashtags"]
             
             # Điều hướng lại trang chính để làm sạch khung chat trước khi vào Tạo video
             logger.info("Làm sạch khung chat và bắt đầu bước tạo video...")

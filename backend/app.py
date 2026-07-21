@@ -192,20 +192,42 @@ async def open_login():
     await manager.start_login_session()
     return {"status": "success", "manager_status": manager.status}
 
+@app.post("/api/switch-account")
+async def switch_account():
+    await manager.switch_account()
+    return {"status": "success", "manager_status": manager.status}
+
 @app.get("/api/videos")
 async def list_videos():
-    """Liệt kê danh sách các video kết quả đã hoàn thành."""
+    """Liệt kê danh sách các video kết quả đã hoàn thành đính kèm thông tin Caption/Hashtags."""
     videos = []
     try:
+        import json
         for p in OUTPUT_DIR.glob("*.mp4"):
             stat = p.stat()
+            json_path = OUTPUT_DIR / f"{p.stem}.json"
+            caption = ""
+            hashtags = ""
+            prompt = ""
+            if json_path.exists():
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                        caption = meta.get("caption", "")
+                        hashtags = meta.get("hashtags", "")
+                        prompt = meta.get("prompt", "")
+                except Exception:
+                    pass
+
             videos.append({
                 "filename": p.name,
                 "size": stat.st_size,
                 "created_at": stat.st_mtime,
-                "url": f"/outputs/{p.name}"
+                "url": f"/outputs/{p.name}",
+                "caption": caption,
+                "hashtags": hashtags,
+                "prompt": prompt
             })
-        # Sắp xếp video mới nhất lên đầu
         videos.sort(key=lambda x: x["created_at"], reverse=True)
     except Exception as e:
         logger.error(f"Lỗi quét thư mục video: {e}")
