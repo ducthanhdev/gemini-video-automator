@@ -221,16 +221,24 @@ class AutomationManager:
             logger.error(f"Không thể mở trang Gemini: {e}")
 
     async def switch_account(self):
-        """Đăng xuất tài khoản Google hiện tại và chuyển sang màn hình đăng nhập tài khoản Gemini mới."""
+        """Đăng xuất tài khoản Google hiện tại và xóa sạch session để đăng nhập tài khoản Gemini mới."""
         await self.initialize()
         self.status = "waiting_login"
-        if self.page:
+        if self.context and self.page:
             try:
-                logger.info("Đang tiến hành đăng xuất tài khoản Google hiện tại...")
-                await self.page.goto("https://accounts.google.com/Logout")
-                await asyncio.sleep(2)
-                await self.page.goto("https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app")
+                logger.info("Đang tiến hành xóa cookies và đăng xuất tài khoản Google hiện tại...")
+                # Xóa sạch toàn bộ Cookies trong trình duyệt Playwright
+                await self.context.clear_cookies()
+                try:
+                    await self.page.goto("https://accounts.google.com/Logout", wait_until="domcontentloaded")
+                    await asyncio.sleep(1)
+                    await self.page.evaluate("try { localStorage.clear(); sessionStorage.clear(); } catch(e){}")
+                except Exception:
+                    pass
+                
+                # Điều hướng trực tiếp sang trang Thêm/Đăng nhập tài khoản Google mới
                 logger.info("Đã mở trang đăng nhập tài khoản Google/Gemini mới.")
+                await self.page.goto("https://accounts.google.com/AddSession?continue=https://gemini.google.com/app", wait_until="domcontentloaded")
             except Exception as e:
                 logger.error(f"Lỗi khi thực hiện đăng xuất/chuyển tài khoản: {e}")
 
@@ -594,10 +602,13 @@ class AutomationManager:
             await file_chooser.set_files(str_paths)
             await asyncio.sleep(3)  # Chờ ảnh load lên
             
-            # Điền Meta-Prompt vào Chat thường
+            # Điền Meta-Prompt đầy đủ vào Chat thường
+            from backend.services.prompt_optimizer import _generate_meta_prompt, parse_prompt_response
+            meta_prompt_to_send = _generate_meta_prompt(task["user_description"], len(image_paths) > 1, self.meta_prompt_template)
+
             chat_input = self.page.locator("div[role='textbox'], [contenteditable='true']").first
             await chat_input.focus()
-            await chat_input.fill(prompt)
+            await chat_input.fill(meta_prompt_to_send)
             await asyncio.sleep(1)
             await chat_input.press("Enter")
             
@@ -617,21 +628,21 @@ class AutomationManager:
                 await asyncio.sleep(1)
             
             # Trích xuất prompt tối ưu từ câu trả lời của Gemini
-            from backend.services.prompt_optimizer import parse_prompt_response
             parsed_dict = parse_prompt_response(last_text)
             optimized_prompt = parsed_dict.get("prompt", "").strip()
             
-            if not optimized_prompt:
-                logger.warning("Không thể lấy prompt tối ưu từ Chat. Dùng prompt mặc định.")
-                optimized_prompt = f"A video of a product based on: {task['user_description']}"
+            if not optimized_prompt or "Engineer & Social Media Marketing" in optimized_prompt:
+                logger.warning("Không thể lấy prompt tối ưu sạch từ Chat. Dùng prompt fallback.")
+                optimized_prompt = f"A high-quality 4k promotional video of pet cat food product based on: {task['user_description']}"
                 
             logger.info(f"Đã nhận prompt tối ưu từ Chat: {optimized_prompt}")
             prompt = optimized_prompt
-            task["optimized_prompt"] = optimized_prompt
-            if parsed_dict.get("caption"):
-                task["caption"] = parsed_dict["caption"]
-            if parsed_dict.get("hashtags"):
-                task["hashtags"] = parsed_dict["hashtags"]
+            self.update_task(
+                task,
+                optimized_prompt=optimized_prompt,
+                caption=parsed_dict.get("caption", ""),
+                hashtags=parsed_dict.get("hashtags", "")
+            )
             
             # Điều hướng lại trang chính để làm sạch khung chat trước khi vào Tạo video
             logger.info("Làm sạch khung chat và bắt đầu bước tạo video...")

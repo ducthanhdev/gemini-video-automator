@@ -17,10 +17,10 @@ def parse_prompt_response(text: str) -> dict[str, str]:
         
     text = text.strip()
     
-    # Tìm các vị trí thẻ nhãn PROMPT, CAPTION, HASHTAGS bằng regex (chấp nhận cả markdown **, #, số thứ tự)
-    prompt_match = re.search(r'(?:\*\*|#|\d+\.\s*)?PROMPT(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
-    caption_match = re.search(r'(?:\*\*|#|\d+\.\s*)?CAPTION(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
-    hashtags_match = re.search(r'(?:\*\*|#|\d+\.\s*)?HASHTAGS(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    # Tìm các vị trí thẻ nhãn PROMPT, CAPTION, HASHTAGS bằng regex (chấp nhận cả markdown **, #, số thứ tự, PROMPT VIDEO...)
+    prompt_match = re.search(r'(?:\*\*|#|\d+\.\s*)?PROMPT(?:\s*VIDEO)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    caption_match = re.search(r'(?:\*\*|#|\d+\.\s*)?CAPTION(?:\s*BÀI\s*ĐĂNG)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    hashtags_match = re.search(r'(?:\*\*|#|\d+\.\s*)?HASHTAGS?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
 
     prompt = text
     caption = ""
@@ -49,6 +49,11 @@ def parse_prompt_response(text: str) -> dict[str, str]:
     prompt = re.sub(r'^\*+|\*+$', '', prompt).strip()
     prompt = prompt.strip('"').strip("'").strip()
     
+    # Nếu Gemini lỡ trả về định dạng kịch bản dạng Scene 1, Scene 2..., tự động gom thành 1 đoạn duy nhất
+    if "Scene 1" in prompt or "Scene 2" in prompt:
+        prompt = re.sub(r'Scene\s*\d+:[^\n]*', '', prompt, flags=re.IGNORECASE).strip()
+        prompt = re.sub(r'\n+', ' ', prompt).strip()
+
     caption = re.sub(r'^\*+|\*+$', '', caption).strip()
     hashtags = re.sub(r'^\*+|\*+$', '', hashtags).strip()
 
@@ -64,7 +69,7 @@ def optimize_prompt(
     api_key: str | None = None,
     system_instruction: str | None = None,
     meta_prompt_template: str | None = None
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """
     Tối ưu hóa prompt tạo video từ hình ảnh và mô tả ngắn.
     Trả về dict chứa: prompt, caption, hashtags.
@@ -112,11 +117,11 @@ def optimize_prompt(
         except Exception as e:
             logger.error(f"Lỗi khi gọi API Gemini Developer: {e}. Tự động fallback sang Meta-Prompt.")
             meta_str = _generate_meta_prompt(user_description, len(image_paths) > 1, meta_template)
-            return parse_prompt_response(meta_str)
+            return {"prompt": meta_str, "caption": "", "hashtags": "", "is_meta": True}
     else:
         logger.info("Không có API Key. Sử dụng Meta-Prompt trực tiếp cho Web UI.")
         meta_str = _generate_meta_prompt(user_description, len(image_paths) > 1, meta_template)
-        return parse_prompt_response(meta_str)
+        return {"prompt": meta_str, "caption": "", "hashtags": "", "is_meta": True}
 
 def _generate_meta_prompt(user_description: str, has_multiple_images: bool, meta_template: str) -> str:
     """Tạo Meta-Prompt tối ưu gửi thẳng cho Gemini Web."""
