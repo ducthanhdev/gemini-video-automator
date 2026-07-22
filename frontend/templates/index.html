@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Video Batch Automator</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=1.3">
+    <link rel="stylesheet" href="/static/css/style.css?v=1.5">
     <!-- Thư viện tạo mã QR offline -->
     <script src="/static/js/qrcode.min.js?v=1.3"></script>
 </head>
@@ -30,6 +30,18 @@
             <section class="left-column">
                 <div class="card create-card">
                     <h2><span class="icon">🎬</span> Tạo video mới</h2>
+
+                    <!-- Tính năng tự động trích xuất thông tin & ảnh từ Link sản phẩm -->
+                    <div class="form-group">
+                        <label for="product-url-input">Tải tự động từ Link sản phẩm (TikTok Shop, Shopee, Lazada...)</label>
+                        <div class="url-input-group">
+                            <input type="text" id="product-url-input" placeholder="Dán đường dẫn link sản phẩm tại đây...">
+                            <button type="button" id="btn-parse-url" class="btn btn-secondary">
+                                <span class="icon">🔗</span> Lấy thông tin
+                            </button>
+                        </div>
+                        <small id="parse-url-status" style="display: block; margin-top: 6px; color: var(--text-muted);"></small>
+                    </div>
 
                     <div class="form-group">
                         <label for="image-upload">Chọn danh sách ảnh (Hỗ trợ tải nhiều ảnh)</label>
@@ -198,17 +210,21 @@
                 Trình duyệt của bạn không hỗ trợ phát video này.
             </video>
             <div class="modal-caption-box" id="modal-caption-box" style="display: none;">
-                <div class="caption-header">
-                    <span>📝 Bài Đăng & Hashtags Quảng Cáo:</span>
-                    <button id="btn-copy-caption" class="btn btn-secondary btn-sm">📋 Sao chép Bài đăng</button>
+                <div class="caption-header" style="display: flex; flex-direction: column; gap: 8px;">
+                    <span style="font-weight: 600; font-size: 0.95rem;">📝 Bài Đăng & Hashtags Quảng Cáo:</span>
+                    <div class="caption-actions" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button id="btn-copy-all" class="btn btn-secondary btn-sm" style="background:#4f46e5; color:#fff; font-weight:600;">📋 Copy Tất cả</button>
+                        <button id="btn-copy-caption" class="btn btn-secondary btn-sm">📝 Copy Caption</button>
+                        <button id="btn-copy-hashtags" class="btn btn-secondary btn-sm">🏷️ Copy Hashtags</button>
+                    </div>
                 </div>
-                <div class="caption-text" id="modal-caption-text"></div>
-                <div class="hashtags-text" id="modal-hashtags-text"></div>
+                <div class="caption-text" id="modal-caption-text" style="user-select: text; -webkit-user-select: text; margin-top: 8px;"></div>
+                <div class="hashtags-text" id="modal-hashtags-text" style="user-select: text; -webkit-user-select: text; margin-top: 6px;"></div>
             </div>
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=1.3"></script>
+    <script src="/static/js/app.js?v=1.5"></script>
 </body>
 
 </html>

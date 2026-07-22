@@ -8,6 +8,7 @@ from playwright.async_api import async_playwright
 from backend.config import PROFILE_DIR, UPLOAD_DIR, OUTPUT_DIR, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPLATE, CLIP_DURATION, QUEUE_FILE
 from backend.services.prompt_optimizer import optimize_prompt
 from backend.services import video_processor
+from backend.services.product_parser import ProductParser
 
 logger = logging.getLogger(__name__)
 
@@ -84,15 +85,16 @@ class AutomationManager:
             logger.info("Đang khởi tạo Playwright...")
             self.playwright = await async_playwright().start()
             
-            # Khởi chạy Persistent Context sử dụng Chrome của hệ thống kèm cờ ẩn chế độ tự động hóa
+            # Khởi chạy Persistent Context sử dụng Chrome của hệ thống kèm cờ mở rộng tối đa màn hình
             self.context = await self.playwright.chromium.launch_persistent_context(
                 user_data_dir=str(PROFILE_DIR),
                 channel="chrome",
                 headless=False,  # Bắt buộc headless=False để người dùng đăng nhập
-                viewport={"width": 1280, "height": 800},
-                no_viewport=False,
+                viewport=None,
+                no_viewport=True,
                 ignore_default_args=["--enable-automation"],
                 args=[
+                    "--start-maximized",
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-infobars"
@@ -147,6 +149,145 @@ class AutomationManager:
             self.context = None
             self.page = None
             self.status = "idle"
+
+    async def parse_product_url_with_browser(self, url: str) -> dict:
+        """Sử dụng trình duyệt Chrome đang chạy để mở link sản phẩm và bóc tách dữ liệu DOM chi tiết dưới phần About this product."""
+        if not self.context:
+            return ProductParser.parse_product_url(url, api_key=self.api_key)
+
+        page = self.page
+        opened_new_page = False
+        if not page or page.is_closed():
+            page = await self.context.new_page()
+            opened_new_page = True
+
+        try:
+            logger.info(f"Đang mở link sản phẩm mới trên Chrome: {url}")
+            await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            await asyncio.sleep(2)
+
+            # Nếu đang ở màn hình Security Check, chờ tối đa 20s cho người dùng giải Captcha trên Chrome
+            start_wait_time = asyncio.get_running_loop().time()
+            title = await page.title()
+            while title and "Security Check" in title and (asyncio.get_running_loop().time() - start_wait_time) < 20:
+                logger.info("Phát hiện màn hình Security Check. Đang chờ người dùng kéo mảnh ghép Captcha trên Chrome...")
+                await asyncio.sleep(2)
+                try:
+                    title = await page.title()
+                except Exception:
+                    pass
+
+            extracted_desc = ""
+            image_urls = []
+
+            for retry in range(3):
+                try:
+                    # Cuộn trang xuống để kích hoạt lazy loading phần Mô tả sản phẩm (About this product)
+                    await page.evaluate("window.scrollTo(0, 800)")
+                    await asyncio.sleep(1)
+
+                    # Trích xuất phần mô tả chính xác giữa marker BẮT ĐẦU và KẾT THÚC
+                    extracted_desc = await page.evaluate('''() => {
+                        const fullBody = document.body ? document.body.innerText : '';
+                        const startMarkers = [
+                            'Thông tin về sản phẩm này',
+                            'About this product',
+                            'Mô tả sản phẩm',
+                            'Product description',
+                            'Product Details'
+                        ];
+                        const endMarkers = [
+                            'Khám phá thêm sản phẩm từ',
+                            'Bạn cũng có thể thích',
+                            'Đánh giá của khách hàng',
+                            'Recommended',
+                            'Customers also liked',
+                            'Khám phá thêm',
+                            'Reviews',
+                            'TikTok Shop',
+                            'Cửa hàng',
+                            'Tận hưởng trải nghiệm',
+                            'Hỗ trợ khách hàng'
+                        ];
+
+                        let startPos = -1;
+                        for (const sm of startMarkers) {
+                            const p = fullBody.indexOf(sm);
+                            if (p !== -1) {
+                                startPos = p;
+                                break;
+                            }
+                        }
+
+                        if (startPos !== -1) {
+                            const sub = fullBody.substring(startPos);
+                            let endPos = sub.length;
+                            for (const em of endMarkers) {
+                                const p = sub.indexOf(em);
+                                if (p !== -1 && p > 50) {
+                                    if (p < endPos) endPos = p;
+                                }
+                            }
+                            const sliced = sub.substring(0, endPos).trim();
+                            if (sliced.length > 30) return sliced;
+                        }
+
+                        return '';
+                    }''')
+
+                    # Trích xuất URL hình ảnh từ DOM
+                    image_urls = await page.evaluate('''() => {
+                        const imgs = Array.from(document.querySelectorAll('img'));
+                        const srcList = [];
+                        for (const img of imgs) {
+                            const src = img.src || img.getAttribute('data-src');
+                            if (src && (src.includes('ibyteimg') || src.includes('tiktok') || src.includes('product')) && !src.includes('avatar') && !src.includes('logo')) {
+                                if (!srcList.includes(src)) srcList.push(src);
+                            }
+                        }
+                        return srcList;
+                    }''')
+
+                    if extracted_desc and len(extracted_desc) > 30:
+                        logger.info(f"Đã trích xuất thành công {len(extracted_desc)} ký tự ở lần thử {retry+1}!")
+                        break
+
+                except Exception as eval_err:
+                    logger.warning(f"Lần thử {retry+1} bị gián đoạn (trang đang chuyển hướng): {eval_err}")
+                    await asyncio.sleep(2)
+
+            if opened_new_page and page and not page.is_closed():
+                await page.close()
+
+            logger.info(f"Kết quả trích xuất DOM: {len(extracted_desc)} ký tự. Tiêu đề: {title}")
+
+            if extracted_desc and len(extracted_desc) > 30 and "Security Check" not in extracted_desc:
+                saved_images = []
+                for img_url in image_urls[:3]:
+                    fn = ProductParser._download_image(img_url)
+                    if fn:
+                        saved_images.append(fn)
+
+                clean_title = title.replace(" - TikTok Shop", "").replace("TikTok Shop", "").strip()
+                full_text = f"{clean_title}\n\n{extracted_desc}"
+
+                return {
+                    "title": clean_title,
+                    "description": extracted_desc,
+                    "full_text": full_text,
+                    "images": saved_images,
+                    "raw_image_urls": image_urls
+                }
+
+        except Exception as e:
+            logger.warning(f"Lỗi khi dùng Chrome bóc tách DOM: {e}")
+            if page and not page.is_closed():
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+
+        return ProductParser.parse_product_url(url, api_key=self.api_key)
 
     async def _screenshot_loop(self):
         """Luồng chụp ảnh màn hình trình duyệt định kỳ gửi lên UI."""
@@ -397,7 +538,8 @@ class AutomationManager:
             finally:
                 self.current_task_id = None
                 
-            await asyncio.sleep(2)
+            # Chờ 5s để hệ thống lưu trữ tệp hoàn chỉnh xuống ổ đĩa và cập nhật giao diện trước khi sang task tiếp theo
+            await asyncio.sleep(5)
 
     async def _execute_task(self, task: dict[str, Any]):
         """Thực thi một nhiệm vụ tạo video chi tiết."""
@@ -911,7 +1053,13 @@ class AutomationManager:
             with open(output_path, "wb") as f:
                 f.write(video_bytes)
                 
-            logger.info(f"Đã lưu video thành công vào: {output_path}")
+            # Đảm bảo tệp đã được ghi hoàn tất xuống đĩa cứng và kiểm tra dung lượng > 10KB
+            await asyncio.sleep(2)
+            if not output_path.exists() or output_path.stat().st_size < 10000:
+                raise Exception(f"Video {output_path.name} sinh ra bị hỏng hoặc kích thước quá nhỏ ({output_path.stat().st_size if output_path.exists() else 0} bytes).")
+
+            logger.info(f"Đã lưu video thành công vào: {output_path} (Kích thước: {output_path.stat().st_size} bytes)")
+            await asyncio.sleep(2)  # Đợi 2s để đảm bảo phiên làm việc ổn định trước khi chuyển nhiệm vụ mới
             
         except Exception as e:
             logger.error(f"Lỗi khi thực thi tải video: {e}")

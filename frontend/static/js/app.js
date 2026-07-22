@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initQRCode();
     initSettings();
     initUploadDropzone();
+    initProductUrlParser();
     initActionButtons();
     initTaskCreation();
     initLayoutResizer();
@@ -164,33 +165,97 @@ function initUploadDropzone() {
             showToast("Lỗi kết nối khi tải ảnh.", true);
         }
     }
+}
 
-    function createPreviewThumbnail(filename) {
-        const item = document.createElement("div");
-        item.className = "preview-item";
-        item.dataset.filename = filename;
-        
-        // Hiển thị ảnh upload thông qua endpoint upload (hoặc nếu là localhost, có thể map ảnh uploads)
-        // Tuy nhiên FastAPI chưa mount uploads trực tiếp, let's assume we can stream it, or we just write a route to view uploads.
-        // Khoan, để đơn giản, ta có thể lưu ảnh tạm thời và xem nó từ endpoint.
-        // Cách tối ưu nhất là cho phép frontend hiển thị ảnh local blob trước đó, nhưng ảnh đã upload thì dùng link /static hoặc endpoint phụ.
-        // Ta có thể tạo 1 endpoint static cho /uploads nếu cần, nhưng để nhanh hơn ta có thể show một icon placeholder kèm tên ảnh
-        // hoặc viết API phục vụ ảnh uploads. Tuy nhiên chỉ cần hiển thị icon ảnh có nút remove là đủ!
-        // Để chuyên nghiệp, ta sẽ load trực tiếp hình từ local files nếu có, hoặc tạo 1 placeholder.
-        item.innerHTML = `
-            <div style="width:100%;height:100%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:20px;">🖼️</div>
-            <div class="remove-btn">✕</div>
-        `;
-        
-        item.querySelector(".remove-btn").addEventListener("click", (e) => {
-            e.stopPropagation();
-            uploadedFiles = uploadedFiles.filter(f => f !== filename);
-            item.remove();
-            validateForm();
-        });
-        
-        previewGallery.appendChild(item);
-    }
+function createPreviewThumbnail(filename) {
+    const previewGallery = document.getElementById("preview-gallery");
+    if (!previewGallery) return;
+
+    const item = document.createElement("div");
+    item.className = "preview-item";
+    item.dataset.filename = filename;
+    
+    item.innerHTML = `
+        <img src="/uploads/${filename}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.onerror=null;this.parentNode.innerHTML='<div style=\'width:100%;height:100%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:20px;\'>🖼️</div><div class=\'remove-btn\'>✕</div>'">
+        <div class="remove-btn">✕</div>
+    `;
+    
+    item.querySelector(".remove-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        uploadedFiles = uploadedFiles.filter(f => f !== filename);
+        item.remove();
+        validateForm();
+    });
+    
+    previewGallery.appendChild(item);
+}
+
+// 3.5 BÓC TÁCH THÔNG TIN TỪ LINK SẢN PHẨM
+function initProductUrlParser() {
+    const btnParse = document.getElementById("btn-parse-url");
+    const urlInput = document.getElementById("product-url-input");
+    const statusText = document.getElementById("parse-url-status");
+    const descInput = document.getElementById("user-description");
+
+    if (!btnParse || !urlInput) return;
+
+    btnParse.addEventListener("click", async (e) => {
+        if (e) e.preventDefault();
+        const url = urlInput.value.trim();
+        if (!url) {
+            showToast("Vui lòng nhập đường dẫn link sản phẩm.", true);
+            return;
+        }
+
+        btnParse.disabled = true;
+        btnParse.innerHTML = `<span class="icon">⏳</span> Đang bóc tách...`;
+        statusText.innerText = "Đang kết nối và lấy thông tin sản phẩm từ link...";
+        statusText.style.color = "var(--text-muted)";
+
+        try {
+            const res = await fetch("/api/parse-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: url })
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.status === "success") {
+                const data = result.data;
+                if (data.full_text) {
+                    descInput.value = data.full_text;
+                }
+                
+                if (data.images && data.images.length > 0) {
+                    data.images.forEach(filename => {
+                        if (!uploadedFiles.includes(filename)) {
+                            uploadedFiles.push(filename);
+                            createPreviewThumbnail(filename);
+                        }
+                    });
+                }
+
+                validateForm();
+                statusText.innerText = `✅ Đã lấy thành công: ${data.title} (${data.images.length} ảnh sản phẩm)`;
+                statusText.style.color = "#4caf50";
+                showToast("Đã bóc tách dữ liệu sản phẩm thành công!");
+            } else {
+                const errorMsg = result.detail || "Không thể lấy thông tin từ đường dẫn này.";
+                statusText.innerText = `❌ ${errorMsg}`;
+                statusText.style.color = "#f44336";
+                showToast(errorMsg, true);
+            }
+        } catch (e) {
+            console.error("Lỗi khi bóc tách link:", e);
+            statusText.innerText = "❌ Lỗi kết nối máy chủ.";
+            statusText.style.color = "#f44336";
+            showToast("Lỗi kết nối máy chủ.", true);
+        } finally {
+            btnParse.disabled = false;
+            btnParse.innerHTML = `<span class="icon">🔗</span> Lấy thông tin`;
+        }
+    });
 }
 
 // 4. KIỂM TRA ĐIỀU KIỆN KÍCH HOẠT NÚT TẠO VIDEO
@@ -466,8 +531,8 @@ async function loadVideos() {
                     e.stopPropagation();
                     if (videoData.caption || videoData.hashtags) {
                         const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
-                        navigator.clipboard.writeText(fullCopy).then(() => {
-                            showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+                        copyTextToClipboard(fullCopy).then(() => {
+                            showToast("📋 Đã sao chép Bài đăng & Hashtags!");
                         }).catch(() => {
                             showToast("Không thể tự động sao chép.", true);
                         });
@@ -515,7 +580,10 @@ function openVideoModal(videoData) {
     const captionBox = document.getElementById("modal-caption-box");
     const captionText = document.getElementById("modal-caption-text");
     const hashtagsText = document.getElementById("modal-hashtags-text");
-    const btnCopy = document.getElementById("btn-copy-caption");
+    
+    const btnCopyAll = document.getElementById("btn-copy-all");
+    const btnCopyCaption = document.getElementById("btn-copy-caption");
+    const btnCopyHashtags = document.getElementById("btn-copy-hashtags");
 
     const url = typeof videoData === "string" ? videoData : videoData.url;
     
@@ -530,11 +598,39 @@ function openVideoModal(videoData) {
         if (hashtagsText) hashtagsText.innerText = videoData.hashtags || "";
         if (captionBox) captionBox.style.display = "flex";
 
-        if (btnCopy) {
-            btnCopy.onclick = () => {
+        if (btnCopyAll) {
+            btnCopyAll.onclick = () => {
                 const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
-                navigator.clipboard.writeText(fullCopy).then(() => {
-                    showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+                copyTextToClipboard(fullCopy).then(() => {
+                    showToast("📋 Đã sao chép Bài đăng & Hashtags!");
+                }).catch(() => {
+                    showToast("Lỗi khi sao chép tự động.", true);
+                });
+            };
+        }
+        if (btnCopyCaption) {
+            btnCopyCaption.onclick = () => {
+                const captionOnly = (videoData.caption || '').trim();
+                if (!captionOnly) {
+                    showToast("Không có Caption để sao chép.", true);
+                    return;
+                }
+                copyTextToClipboard(captionOnly).then(() => {
+                    showToast("📝 Đã sao chép Caption!");
+                }).catch(() => {
+                    showToast("Lỗi khi sao chép tự động.", true);
+                });
+            };
+        }
+        if (btnCopyHashtags) {
+            btnCopyHashtags.onclick = () => {
+                const hashtagsOnly = (videoData.hashtags || '').trim();
+                if (!hashtagsOnly) {
+                    showToast("Không có Hashtags để sao chép.", true);
+                    return;
+                }
+                copyTextToClipboard(hashtagsOnly).then(() => {
+                    showToast("🏷️ Đã sao chép Hashtags!");
                 }).catch(() => {
                     showToast("Lỗi khi sao chép tự động.", true);
                 });
@@ -745,10 +841,80 @@ window.copyErrorToClipboard = async (taskId) => {
     const task = latestQueueList.find(t => t.id === taskId);
     if (!task || !task.error) return;
     
-    try {
-        await navigator.clipboard.writeText(task.error);
-        showToast("Đã copy mã lỗi vào clipboard!");
-    } catch (err) {
-        showToast("Không thể copy tự động, hãy copy thủ công!", "error");
-    }
+    copyTextToClipboard(task.error).then(() => {
+        showToast("📋 Đã copy mã lỗi!");
+    }).catch(() => {
+        showToast("Không thể copy tự động!", "error");
+    });
 };
+
+window.copyTaskCaption = function(taskId) {
+    const task = latestQueueList.find(t => t.id === taskId);
+    if (!task) return;
+    const caption = task.caption || "";
+    const hashtags = task.hashtags || "";
+    if (!caption && !hashtags) {
+        showToast("Nhiệm vụ này chưa có Caption/Hashtag.", true);
+        return;
+    }
+    const fullText = `${caption}\n\n${hashtags}`.trim();
+    copyTextToClipboard(fullText).then(() => {
+        showToast("📋 Đã sao chép Bài đăng & Hashtags!");
+    }).catch(err => {
+        showToast("Không thể tự động sao chép.", true);
+    });
+};
+
+// 13. HÀM TỰ ĐỘNG SAO CHÉP TƯƠNG THÍCH MỌI TRÌNH DUYỆT ĐIỆN THOẠI / HTTP
+function copyTextToClipboard(text) {
+    if (!text) return Promise.reject("Không có văn bản để sao chép");
+    
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text).catch(() => fallbackCopyTextToClipboard(text));
+    } else {
+        return fallbackCopyTextToClipboard(text);
+    }
+}
+
+function fallbackCopyTextToClipboard(text) {
+    return new Promise((resolve, reject) => {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.width = "2em";
+            textArea.style.height = "2em";
+            textArea.style.padding = "0";
+            textArea.style.border = "none";
+            textArea.style.outline = "none";
+            textArea.style.boxShadow = "none";
+            textArea.style.background = "transparent";
+            textArea.style.opacity = "0.01";
+            document.body.appendChild(textArea);
+            
+            textArea.focus();
+            textArea.select();
+            
+            if (navigator.userAgent.match(/ipad|iphone/i)) {
+                const range = document.createRange();
+                range.selectNodeContents(textArea);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                textArea.setSelectionRange(0, 999999);
+            }
+
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (successful) {
+                resolve();
+            } else {
+                reject(new Error("execCommand copy failed"));
+            }
+        } catch (err) {
+            reject(err);
+        }
+    });
+}

@@ -278,6 +278,25 @@ body {
     flex: 1;
 }
 
+.url-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.url-input-group input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+}
+
+.url-input-group .btn {
+    width: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 label {
     font-size: 0.75rem;
     font-weight: 600;

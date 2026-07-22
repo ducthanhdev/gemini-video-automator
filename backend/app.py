@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from backend.config import BASE_DIR, UPLOAD_DIR, OUTPUT_DIR, PORT
 from backend.services.automation import AutomationManager
+from backend.services.product_parser import ProductParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ app = FastAPI(title="Gemini Video Batch Generator", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "frontend" / "static")), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "frontend" / "templates"))
 
@@ -62,6 +64,9 @@ class TaskUpdate(BaseModel):
     user_description: str
     duration: int
     ratio: str
+
+class ParseUrlRequest(BaseModel):
+    url: str
 
 # REST Endpoints
 @app.get("/", response_class=HTMLResponse)
@@ -122,6 +127,17 @@ async def upload_files(files: List[UploadFile] = File(...)):
             raise HTTPException(status_code=500, detail=f"Không thể lưu file {file.filename}")
             
     return {"filenames": saved_filenames}
+
+@app.post("/api/parse-url")
+async def parse_product_url(payload: ParseUrlRequest):
+    if not payload.url or not payload.url.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập đường dẫn sản phẩm hợp lệ.")
+    try:
+        result = await manager.parse_product_url_with_browser(payload.url)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Lỗi trích xuất URL {payload.url}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/tasks")
 async def create_task(task_data: TaskCreate):
