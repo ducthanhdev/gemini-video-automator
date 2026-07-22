@@ -24,7 +24,7 @@ class ProductParser:
     """Service trích xuất thông tin sản phẩm và tự động tải ảnh từ URL."""
 
     @staticmethod
-    def parse_product_url(url: str, api_key: str = "") -> Dict[str, Any]:
+    def parse_product_url(url: str, api_key: str = "", **kwargs) -> Dict[str, Any]:
         """
         Tải nội dung HTML từ URL, trích xuất tiêu đề, mô tả và tải về các ảnh sản phẩm chính.
         Tự động phân tích và tạo bài mô tả sản phẩm chi tiết đầy đủ cho mọi ngành hàng.
