@@ -705,6 +705,12 @@ class AutomationManager:
 
     async def _upload_images_to_page(self, image_paths: list[Path]) -> bool:
         """Tải hình ảnh lên trình duyệt Gemini một cách linh hoạt, tránh dính timeout 30s."""
+        if not self.page or self.page.is_closed():
+            logger.error("Trình duyệt hoặc trang không tồn tại/đã bị đóng trong _upload_images_to_page.")
+            return False
+
+        page = self.page
+
         str_paths = [str(p.resolve()) for p in image_paths if p.exists()]
         if not str_paths:
             logger.warning("Không có tệp ảnh hợp lệ để tải lên.")
@@ -713,7 +719,7 @@ class AutomationManager:
         logger.info(f"Đang tiến hành tải {len(str_paths)} hình ảnh lên...")
 
         # 1. Thử click nút Plus trước để mở menu hoặc kích hoạt file chooser
-        plus_button = self.page.locator(
+        plus_button = page.locator(
             "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i], button[mattooltip*='Upload' i], button[mattooltip*='Tải' i]"
         ).locator("visible=true").first
 
@@ -725,7 +731,7 @@ class AutomationManager:
             logger.debug(f"Không thể click nút Plus: {e}")
 
         # 2. Kiểm tra xem có menu thả xuống hiện ra hay không (timeout ngắn 2.5 giây)
-        upload_option = self.page.locator(
+        upload_option = page.locator(
             "button[role*='menuitem']:has-text('Tải lên từ máy tính'), button[role*='menuitem']:has-text('Upload from computer'), button[role*='menuitem']:has-text('Upload from this device'), button[role*='menuitem']:has-text('Tải tệp lên'), button[role*='menuitem']:has-text('Upload file'), "
             "button[role*='menuitem']:has-text('Tải lên'), button[role*='menuitem']:has-text('Upload'), "
             ".gem-menu-item-label:has-text('Tải lên từ máy tính'), .gem-menu-item-label:has-text('Upload from computer'), .gem-menu-item-label:has-text('Upload from this device'), .gem-menu-item-label:has-text('Tải tệp lên'), .gem-menu-item-label:has-text('Upload file'), "
@@ -738,7 +744,7 @@ class AutomationManager:
         try:
             if await upload_option.is_visible(timeout=2500):
                 logger.info("Phát hiện menu thả xuống. Đang chọn mục tải file lên...")
-                async with self.page.expect_file_chooser(timeout=5000) as fc_info:
+                async with page.expect_file_chooser(timeout=5000) as fc_info:
                     await upload_option.click(force=True)
                 file_chooser = await fc_info.value
                 await file_chooser.set_files(str_paths)
@@ -750,7 +756,7 @@ class AutomationManager:
         # 3. Click nút Plus kết hợp expect_file_chooser
         try:
             if await plus_button.is_visible(timeout=2000):
-                async with self.page.expect_file_chooser(timeout=5000) as fc_info:
+                async with page.expect_file_chooser(timeout=5000) as fc_info:
                     await plus_button.click(force=True)
                 file_chooser = await fc_info.value
                 await file_chooser.set_files(str_paths)
@@ -761,7 +767,7 @@ class AutomationManager:
 
         # 4. Fallback cuối cùng: nạp trực tiếp vào thẻ input file của DOM
         try:
-            await self.page.set_input_files("input[type='file']", str_paths)
+            await page.set_input_files("input[type='file']", str_paths)
             await asyncio.sleep(3)
             logger.info("Đã nạp file thành công qua thẻ input[type='file'].")
             return True
@@ -772,8 +778,8 @@ class AutomationManager:
 
     async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any]):
         """Điều khiển Playwright nạp ảnh, chọn khung dọc 9:16, gửi prompt và tải video."""
-        if not self.page:
-            raise Exception("Trình duyệt chưa được khởi tạo.")
+        if not self.page or self.page.is_closed():
+            raise Exception("Trình duyệt chưa được khởi tạo hoặc đã bị đóng.")
 
         # 1. Điều hướng và reset khung chat
         logger.info("Điều hướng đến Gemini...")
