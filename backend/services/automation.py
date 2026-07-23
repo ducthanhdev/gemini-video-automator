@@ -703,6 +703,73 @@ class AutomationManager:
             except Exception as e:
                 logger.error(f"Không thể xóa thư mục tạm {temp_dir}: {e}")
 
+    async def _upload_images_to_page(self, image_paths: list[Path]) -> bool:
+        """Tải hình ảnh lên trình duyệt Gemini một cách linh hoạt, tránh dính timeout 30s."""
+        str_paths = [str(p.resolve()) for p in image_paths if p.exists()]
+        if not str_paths:
+            logger.warning("Không có tệp ảnh hợp lệ để tải lên.")
+            return False
+
+        logger.info(f"Đang tiến hành tải {len(str_paths)} hình ảnh lên...")
+
+        # 1. Thử click nút Plus trước để mở menu hoặc kích hoạt file chooser
+        plus_button = self.page.locator(
+            "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i], button[mattooltip*='Upload' i], button[mattooltip*='Tải' i]"
+        ).locator("visible=true").first
+
+        try:
+            if await plus_button.is_visible(timeout=3000):
+                await plus_button.click(force=True)
+                await asyncio.sleep(1)
+        except Exception as e:
+            logger.debug(f"Không thể click nút Plus: {e}")
+
+        # 2. Kiểm tra xem có menu thả xuống hiện ra hay không (timeout ngắn 2.5 giây)
+        upload_option = self.page.locator(
+            "button[role*='menuitem']:has-text('Tải lên từ máy tính'), button[role*='menuitem']:has-text('Upload from computer'), button[role*='menuitem']:has-text('Upload from this device'), button[role*='menuitem']:has-text('Tải tệp lên'), button[role*='menuitem']:has-text('Upload file'), "
+            "button[role*='menuitem']:has-text('Tải lên'), button[role*='menuitem']:has-text('Upload'), "
+            ".gem-menu-item-label:has-text('Tải lên từ máy tính'), .gem-menu-item-label:has-text('Upload from computer'), .gem-menu-item-label:has-text('Upload from this device'), .gem-menu-item-label:has-text('Tải tệp lên'), .gem-menu-item-label:has-text('Upload file'), "
+            "button:has-text('Tải lên từ máy tính'), button:has-text('Upload from computer'), button:has-text('Upload from this device'), button:has-text('Tải tệp lên'), button:has-text('Upload file'), "
+            "button:has-text('Tải lên'), button:has-text('Upload'), "
+            "[role*='menu'] button:has-text('Tải lên từ máy tính'), [role*='menu'] button:has-text('Upload from computer'), [role*='menu'] button:has-text('Upload from this device'), [role*='menu'] button:has-text('Tải tệp lên'), [role*='menu'] button:has-text('Upload file'), "
+            "[role*='menu'] span:has-text('Tải lên từ máy tính'), [role*='menu'] span:has-text('Upload from computer'), [role*='menu'] span:has-text('Upload from this device'), [role*='menu'] span:has-text('Tải tệp lên'), [role*='menu'] span:has-text('Upload file')"
+        ).locator("visible=true").first
+
+        try:
+            if await upload_option.is_visible(timeout=2500):
+                logger.info("Phát hiện menu thả xuống. Đang chọn mục tải file lên...")
+                async with self.page.expect_file_chooser(timeout=5000) as fc_info:
+                    await upload_option.click(force=True)
+                file_chooser = await fc_info.value
+                await file_chooser.set_files(str_paths)
+                await asyncio.sleep(3)
+                return True
+        except Exception as e:
+            logger.info(f"Không nhấp được menu thả xuống ({e}). Chuyển sang phương án nạp file trực tiếp...")
+
+        # 3. Click nút Plus kết hợp expect_file_chooser
+        try:
+            if await plus_button.is_visible(timeout=2000):
+                async with self.page.expect_file_chooser(timeout=5000) as fc_info:
+                    await plus_button.click(force=True)
+                file_chooser = await fc_info.value
+                await file_chooser.set_files(str_paths)
+                await asyncio.sleep(3)
+                return True
+        except Exception as e:
+            logger.debug(f"File chooser trực tiếp từ Plus button thất bại ({e})...")
+
+        # 4. Fallback cuối cùng: nạp trực tiếp vào thẻ input file của DOM
+        try:
+            await self.page.set_input_files("input[type='file']", str_paths)
+            await asyncio.sleep(3)
+            logger.info("Đã nạp file thành công qua thẻ input[type='file'].")
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
+
+        return False
+
     async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any]):
         """Điều khiển Playwright nạp ảnh, chọn khung dọc 9:16, gửi prompt và tải video."""
         if not self.page:
@@ -719,30 +786,8 @@ class AutomationManager:
             logger.info("Chế độ Web UI: Đang tối ưu hóa prompt qua Chat Gemini trước...")
             self.update_task(task, status="generating optimized prompt via chat")
             
-            # Click nút Plus để mở menu trong Chat
-            plus_button = self.page.locator(
-                "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i]"
-            ).locator("visible=true").first
-            await plus_button.click(force=True)
-            await asyncio.sleep(1.5)
-            
-            # Chọn 'Tải tệp lên' và nạp ảnh tự động (hỗ trợ cả giao diện mới và cũ)
-            upload_option = self.page.locator(
-                "button[role*='menuitem']:has-text('Tải lên từ máy tính'), button[role*='menuitem']:has-text('Upload from computer'), button[role*='menuitem']:has-text('Upload from this device'), button[role*='menuitem']:has-text('Tải tệp lên'), button[role*='menuitem']:has-text('Upload file'), "
-                "button[role*='menuitem']:has-text('Tải lên'), button[role*='menuitem']:has-text('Upload'), "
-                ".gem-menu-item-label:has-text('Tải lên từ máy tính'), .gem-menu-item-label:has-text('Upload from computer'), .gem-menu-item-label:has-text('Upload from this device'), .gem-menu-item-label:has-text('Tải tệp lên'), .gem-menu-item-label:has-text('Upload file'), "
-                "button:has-text('Tải lên từ máy tính'), button:has-text('Upload from computer'), button:has-text('Upload from this device'), button:has-text('Tải tệp lên'), button:has-text('Upload file'), "
-                "button:has-text('Tải lên'), button:has-text('Upload'), "
-                "[role*='menu'] button:has-text('Tải lên từ máy tính'), [role*='menu'] button:has-text('Upload from computer'), [role*='menu'] button:has-text('Upload from this device'), [role*='menu'] button:has-text('Tải tệp lên'), [role*='menu'] button:has-text('Upload file'), "
-                "[role*='menu'] span:has-text('Tải lên từ máy tính'), [role*='menu'] span:has-text('Upload from computer'), [role*='menu'] span:has-text('Upload from this device'), [role*='menu'] span:has-text('Tải tệp lên'), [role*='menu'] span:has-text('Upload file')"
-            ).locator("visible=true").first
-            
-            str_paths = [str(p.resolve()) for p in image_paths]
-            async with self.page.expect_file_chooser() as fc_info:
-                await upload_option.click(force=True)
-            file_chooser = await fc_info.value
-            await file_chooser.set_files(str_paths)
-            await asyncio.sleep(3)  # Chờ ảnh load lên
+            # Tải tệp ảnh lên Chat tự động bằng hàm hỗ trợ nhiều phương án
+            await self._upload_images_to_page(image_paths)
             
             # Điền Meta-Prompt đầy đủ vào Chat thường
             from backend.services.prompt_optimizer import _generate_meta_prompt, parse_prompt_response
@@ -926,49 +971,8 @@ class AutomationManager:
         logger.info(f"Đang tải {len(image_paths)} hình ảnh lên...")
         self.update_task(task, status="uploading images to Gemini")
         
-        str_paths = [str(p.resolve()) for p in image_paths]
-        
-        try:
-            # Click nút Plus ở ô nhập liệu của chế độ tạo video để xem menu hiện ra hay mở thẳng hộp thoại chọn file
-            plus_input_area = self.page.locator(
-                "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i]"
-            ).locator("visible=true").first
-            
-            await plus_input_area.click(force=True)
-            await asyncio.sleep(1.5)
-            
-            # Tìm xem có menu tải lên phụ hay không
-            upload_option = self.page.locator(
-                "button[role*='menuitem']:has-text('Tải lên từ máy tính'), button[role*='menuitem']:has-text('Upload from computer'), button[role*='menuitem']:has-text('Upload from this device'), button[role*='menuitem']:has-text('Tải tệp lên'), button[role*='menuitem']:has-text('Upload file'), "
-                "button[role*='menuitem']:has-text('Tải lên'), button[role*='menuitem']:has-text('Upload'), "
-                ".gem-menu-item-label:has-text('Tải lên từ máy tính'), .gem-menu-item-label:has-text('Upload from computer'), .gem-menu-item-label:has-text('Upload from this device'), .gem-menu-item-label:has-text('Tải tệp lên'), .gem-menu-item-label:has-text('Upload file'), "
-                "button:has-text('Tải lên từ máy tính'), button:has-text('Upload from computer'), button:has-text('Upload from this device'), button:has-text('Tải tệp lên'), button:has-text('Upload file'), "
-                "button:has-text('Tải lên'), button:has-text('Upload'), "
-                "[role*='menu'] button:has-text('Tải lên từ máy tính'), [role*='menu'] button:has-text('Upload from computer'), [role*='menu'] button:has-text('Upload from this device'), [role*='menu'] button:has-text('Tải tệp lên'), [role*='menu'] button:has-text('Upload file'), "
-                "[role*='menu'] span:has-text('Tải lên từ máy tính'), [role*='menu'] span:has-text('Upload from computer'), [role*='menu'] span:has-text('Upload from this device'), [role*='menu'] span:has-text('Tải tệp lên'), [role*='menu'] span:has-text('Upload file')"
-            ).locator("visible=true").first
-            
-            if await upload_option.is_visible(timeout=3000):
-                logger.info("Phát hiện menu thả xuống. Đang chọn mục tải file lên...")
-                async with self.page.expect_file_chooser() as fc_info:
-                    await upload_option.click(force=True)
-                file_chooser = await fc_info.value
-                await file_chooser.set_files(str_paths)
-            else:
-                raise Exception("Không tìm thấy menu phụ.")
-                
-        except Exception as e:
-            logger.info(f"Không xuất hiện menu phụ hoặc lỗi ({e}). Tiến hành click trực tiếp nút Plus để nạp file...")
-            plus_input_area = self.page.locator(
-                "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i]"
-            ).locator("visible=true").first
-            
-            async with self.page.expect_file_chooser() as fc_info:
-                await plus_input_area.click(force=True)
-            file_chooser = await fc_info.value
-            await file_chooser.set_files(str_paths)
-            
-        await asyncio.sleep(4)  # Chờ ảnh tải lên trình duyệt
+        await self._upload_images_to_page(image_paths)
+        await asyncio.sleep(2)  # Chờ ảnh tải lên trình duyệt
 
         # 6. Nhập prompt và gửi
         logger.info("Đang điền prompt tạo video...")
