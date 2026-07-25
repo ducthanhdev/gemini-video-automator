@@ -506,7 +506,8 @@ async function loadVideos() {
                         <div class="video-name" title="${video.filename}">${video.filename}</div>
                         <div class="video-card-actions" style="display:flex; gap:6px; margin-top:4px;">
                             <a href="${video.url}" download class="btn-download" style="flex:1; text-align:center;">💾 Tải về</a>
-                            <button class="btn-copy-card" data-index="${index}" style="padding:6px 10px; font-size:0.75rem; background:#4f46e5; color:white; border:none; border-radius:var(--border-radius-sm); cursor:pointer; font-weight:600; transition:all 0.2s ease;">📋 Copy Post</button>
+                            <button class="btn-copy-card" data-index="${index}" style="padding:6px 10px; font-size:0.75rem; background:#4f46e5; color:white; border:none; border-radius:var(--border-radius-sm); cursor:pointer; font-weight:600; transition:all 0.2s ease;" title="Sao chép bài đăng">📋 Copy</button>
+                            <button class="btn-delete-card" data-index="${index}" style="padding:6px 10px; font-size:0.75rem; background:#ef4444; color:white; border:none; border-radius:var(--border-radius-sm); cursor:pointer; font-weight:600; transition:all 0.2s ease;" title="Xóa video này">🗑️ Xóa</button>
                         </div>
                     </div>
                 </div>
@@ -514,10 +515,11 @@ async function loadVideos() {
         });
         grid.innerHTML = html;
 
-        // Sự kiện click mở modal và nút copy bài đăng trực tiếp từ thẻ video
+        // Sự kiện click mở modal, copy bài đăng và xóa video trực tiếp từ thẻ video
         grid.querySelectorAll(".video-item").forEach((item, index) => {
             const wrapper = item.querySelector(".video-wrapper");
             const btnCopyCard = item.querySelector(".btn-copy-card");
+            const btnDeleteCard = item.querySelector(".btn-delete-card");
             const videoData = videos[index];
             
             if (wrapper && videoData) {
@@ -539,6 +541,13 @@ async function loadVideos() {
                     } else {
                         showToast("Chưa có Caption đính kèm cho video này.", true);
                     }
+                });
+            }
+
+            if (btnDeleteCard && videoData) {
+                btnDeleteCard.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    deleteVideo(videoData.filename);
                 });
             }
         });
@@ -584,6 +593,7 @@ function openVideoModal(videoData) {
     const btnCopyAll = document.getElementById("btn-copy-all");
     const btnCopyCaption = document.getElementById("btn-copy-caption");
     const btnCopyHashtags = document.getElementById("btn-copy-hashtags");
+    const btnDeleteModal = document.getElementById("btn-delete-modal-video");
 
     const url = typeof videoData === "string" ? videoData : videoData.url;
     
@@ -592,15 +602,26 @@ function openVideoModal(videoData) {
     source.setAttribute("src", url);
     player.load();
 
-    // Hiển thị Caption & Hashtags nếu có
-    if (typeof videoData === "object" && (videoData.caption || videoData.hashtags)) {
-        if (captionText) captionText.innerText = videoData.caption || "";
+    if (btnDeleteModal && typeof videoData === "object" && videoData.filename) {
+        btnDeleteModal.onclick = () => {
+            deleteVideo(videoData.filename);
+        };
+    }
+
+    // Luôn hiển thị captionBox trong modal
+    if (captionBox) captionBox.style.display = "flex";
+
+    if (typeof videoData === "object") {
+        if (captionText) captionText.innerText = videoData.caption || "(Chưa có bài đăng quảng cáo)";
         if (hashtagsText) hashtagsText.innerText = videoData.hashtags || "";
-        if (captionBox) captionBox.style.display = "flex";
 
         if (btnCopyAll) {
             btnCopyAll.onclick = () => {
                 const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
+                if (!fullCopy) {
+                    showToast("Chưa có thông tin để sao chép.", true);
+                    return;
+                }
                 copyTextToClipboard(fullCopy).then(() => {
                     showToast("📋 Đã sao chép Bài đăng & Hashtags!");
                 }).catch(() => {
@@ -636,8 +657,6 @@ function openVideoModal(videoData) {
                 });
             };
         }
-    } else {
-        if (captionBox) captionBox.style.display = "none";
     }
     
     // Tự động căn chỉnh kích thước ngang/dọc dựa trên kích thước video thực tế
@@ -656,6 +675,31 @@ function openVideoModal(videoData) {
 
     modal.classList.add("show");
     player.play().catch(err => console.log("Tự động phát bị chặn:", err));
+}
+
+// 10.6. HÀM XÓA VIDEO
+async function deleteVideo(filename) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa video '${filename}' không?\nVideo và dữ liệu đính kèm sẽ bị xóa vĩnh viễn.`)) {
+        return;
+    }
+    try {
+        const res = await fetch(`/api/videos/${encodeURIComponent(filename)}`, {
+            method: "DELETE"
+        });
+        if (res.ok) {
+            showToast("🗑️ Đã xóa video thành công!");
+            const modal = document.getElementById("video-modal");
+            if (modal && modal.classList.contains("show")) {
+                document.getElementById("modal-close")?.click();
+            }
+            loadVideos();
+        } else {
+            const data = await res.json();
+            showToast(`Lỗi khi xóa video: ${data.detail || 'Không xác định'}`, true);
+        }
+    } catch (e) {
+        showToast("Lỗi kết nối máy chủ khi xóa video.", true);
+    }
 }
 
 // 11. ĐƯA RA THÔNG BÁO NHANH (TOAST)

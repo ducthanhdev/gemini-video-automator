@@ -248,3 +248,31 @@ async def list_videos():
     except Exception as e:
         logger.error(f"Lỗi quét thư mục video: {e}")
     return videos
+
+@app.delete("/api/videos/{filename}")
+async def delete_video(filename: str):
+    """Xóa file video và các file metadata (.json, .txt) đi kèm trong thư mục outputs."""
+    safe_filename = Path(filename).name
+    if not safe_filename or safe_filename != filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Tên tệp không hợp lệ.")
+    
+    mp4_path = OUTPUT_DIR / safe_filename
+    if not mp4_path.exists():
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp video.")
+    
+    try:
+        mp4_path.unlink(missing_ok=True)
+        
+        stem = mp4_path.stem
+        json_path = OUTPUT_DIR / f"{stem}.json"
+        txt_path = OUTPUT_DIR / f"{stem}.txt"
+        
+        json_path.unlink(missing_ok=True)
+        txt_path.unlink(missing_ok=True)
+        
+        logger.info(f"Đã xóa thành công video và các tệp đi kèm: {filename}")
+        return {"status": "success", "message": f"Đã xóa video {filename}"}
+    except Exception as e:
+        logger.error(f"Lỗi khi xóa video {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể xóa video: {str(e)}")
+
