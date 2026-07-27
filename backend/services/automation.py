@@ -118,11 +118,10 @@ class AutomationManager:
             # Chạy task chụp ảnh màn hình ngầm
             self.screenshot_task = asyncio.create_task(self._screenshot_loop())
             
-            # Tự động kích hoạt hàng đợi nếu có nhiệm vụ pending/đang chờ
+            # Đã nạp danh sách hàng đợi, không tự động chạy cho đến khi người dùng yêu cầu (bấm nút Khởi chạy)
             has_pending = any(t.get("status") == "pending" for t in self.queue)
             if has_pending:
-                logger.info("Phát hiện có nhiệm vụ đang chờ trong hàng đợi. Đang tự động chạy...")
-                asyncio.create_task(self.start_queue_processing())
+                logger.info("Đã tải các nhiệm vụ đang chờ trong hàng đợi. Chờ người dùng nhấn Khởi chạy.")
             
         except Exception as e:
             logger.error(f"Lỗi khi khởi tạo trình duyệt Chrome: {e}")
@@ -142,11 +141,10 @@ class AutomationManager:
             if self.playwright:
                 await self.playwright.stop()
         except Exception as e:
-            logger.error(f"Lỗi khi đóng Playwright: {e}")
+            logger.error(f"Lỗi khi đóng trình duyệt: {e}")
         finally:
-            self.playwright = None
-            self.browser = None
             self.context = None
+            self.playwright = None
             self.page = None
             self.status = "idle"
 
@@ -164,12 +162,15 @@ class AutomationManager:
         try:
             logger.info(f"Đang mở link sản phẩm mới trên Chrome: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=25000)
-            await asyncio.sleep(2)
+            
+            # Tạm dừng 5 giây theo yêu cầu để người dùng có thời gian giải Captcha trên Chrome nếu bị Security Check
+            logger.info("Tạm dừng 5 giây chờ trang tải hoàn tất và cho phép giải Captcha trên Chrome...")
+            await asyncio.sleep(5)
 
-            # Nếu đang ở màn hình Security Check, chờ tối đa 20s cho người dùng giải Captcha trên Chrome
+            # Nếu đang ở màn hình Security Check, tiếp tục chờ thêm tối đa 20s cho người dùng giải Captcha trên Chrome
             start_wait_time = asyncio.get_running_loop().time()
             title = await page.title()
-            while title and "Security Check" in title and (asyncio.get_running_loop().time() - start_wait_time) < 20:
+            while title and ("Security Check" in title or "Verify to continue" in title) and (asyncio.get_running_loop().time() - start_wait_time) < 20:
                 logger.info("Phát hiện màn hình Security Check. Đang chờ người dùng kéo mảnh ghép Captcha trên Chrome...")
                 await asyncio.sleep(2)
                 try:

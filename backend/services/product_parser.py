@@ -68,8 +68,11 @@ class ProductParser:
         if (not title or title == "Security Check" or title == "Live Content") and og_title:
             title = og_title
 
-        if og_image and og_image not in image_urls:
-            image_urls.insert(0, og_image)
+        if og_image:
+            # Tối ưu hóa kích thước ảnh TikTok sang độ phân giải HD (1080x1080)
+            high_res_og_image = re.sub(r':\d+:\d+', ':1080:1080', og_image)
+            if high_res_og_image not in image_urls:
+                image_urls.insert(0, high_res_og_image)
 
         # Tải các hình ảnh chính về UPLOAD_DIR
         saved_images: List[str] = []
@@ -83,7 +86,7 @@ class ProductParser:
 
         return {
             "title": title,
-            "description": description,
+            "description": description if description else full_description,
             "full_text": full_description,
             "images": saved_images,
             "raw_image_urls": image_urls
@@ -94,7 +97,8 @@ class ProductParser:
         """
         Tạo bài mô tả sản phẩm chi tiết đầy đủ.
         - Nếu có Gemini API Key: Gọi Gemini 2.5 Flash phân tích tên & hình ảnh để tự động sinh ra bài mô tả chi tiết đầy đủ 100-150 từ.
-        - Nếu không có API Key hoặc chỉ trích xuất được tiêu đề: Trả về tiêu đề sản phẩm kèm hướng dẫn.
+        - Nếu có mô tả thực tế từ web: Trả về tiêu đề kèm mô tả.
+        - Nếu không có mô tả (dính Security Check/Captcha): Tự động phân tích các thuộc tính từ tiêu đề để định dạng bài mô tả chuẩn.
         """
         title_clean = title.strip()
         desc_clean = description.strip() if description and "Security Check" not in description and "Live Content" not in description else ""
@@ -125,11 +129,41 @@ class ProductParser:
                 logger.warning(f"Không thể dùng Gemini AI để mở rộng mô tả: {e}")
 
         # 2. Nếu đã trích xuất được mô tả thực tế từ web (và không trùng tiêu đề)
-        if desc_clean and desc_clean != title_clean:
+        if desc_clean and desc_clean != title_clean and len(desc_clean) > 20:
             return f"{title_clean}\n\n{desc_clean}"
 
-        # 3. Trả về tiêu đề sản phẩm
-        return title_clean
+        # 3. Định dạng bài mô tả có cấu trúc chuyên nghiệp từ tiêu đề
+        return ProductParser._format_description_from_title(title_clean)
+
+    @staticmethod
+    def _format_description_from_title(title: str) -> str:
+        """Tạo bài mô tả sản phẩm có cấu trúc đẹp mắt từ tiêu đề sản phẩm."""
+        title_clean = title.strip()
+        if not title_clean:
+            return "Sản phẩm mới"
+
+        # Tách tiêu đề theo các dấu phân cách thông dụng (-, –, |, :, ,)
+        parts = [p.strip() for p in re.split(r'[-–|:,]', title_clean) if p.strip()]
+
+        main_name = parts[0] if parts else title_clean
+        details = parts[1:] if len(parts) > 1 else []
+
+        bullet_points = [f"• {item}" for item in details]
+
+        lines = [
+            f"📦 SẢN PHẨM: {main_name}",
+            ""
+        ]
+
+        if bullet_points:
+            lines.append("✨ ĐẶC ĐIỂM & CÔNG DỤNG NỔI BẬT:")
+            lines.extend(bullet_points)
+            lines.append("")
+
+        lines.append("📝 MÔ TẢ CHI TIẾT:")
+        lines.append(f"{title_clean} là sản phẩm chất lượng cao, giúp mang lại giải pháp tiện ích và trải nghiệm tuyệt vời cho người sử dụng.")
+
+        return "\n".join(lines)
 
     @staticmethod
     def _extract_title(html: str) -> str:
@@ -235,6 +269,10 @@ class ProductParser:
     def _download_image(img_url: str) -> str:
         """Tải ảnh từ img_url và lưu vào UPLOAD_DIR với tên UUID. Trả về tên file."""
         try:
+            # Tự động nâng cấp ảnh TikTok lên độ phân giải HD (1080x1080)
+            if ("ibyteimg" in img_url or "tiktok" in img_url) and re.search(r':\d+:\d+', img_url):
+                img_url = re.sub(r':\d+:\d+', ':1080:1080', img_url)
+
             req = urllib.request.Request(img_url, headers=HEADERS)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = resp.read()

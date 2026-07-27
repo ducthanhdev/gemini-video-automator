@@ -209,7 +209,7 @@ function initProductUrlParser() {
 
         btnParse.disabled = true;
         btnParse.innerHTML = `<span class="icon">⏳</span> Đang bóc tách...`;
-        statusText.innerText = "Đang kết nối và lấy thông tin sản phẩm từ link...";
+        statusText.innerText = "Đang mở link sản phẩm (Tạm dừng 5s để bạn kéo mảnh ghép Captcha trên Chrome nếu có)...";
         statusText.style.color = "var(--text-muted)";
 
         try {
