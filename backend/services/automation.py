@@ -358,31 +358,36 @@ class AutomationManager:
             logger.error("Không thể khởi tạo trang trình duyệt để bắt đầu đăng nhập.")
             return
         try:
-            await self.page.goto("https://gemini.google.com/app")
+            logger.info("Đang điều hướng đến trang Đăng nhập Google...")
+            await self.page.goto("https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app", wait_until="domcontentloaded")
         except Exception as e:
-            logger.error(f"Không thể mở trang Gemini: {e}")
+            logger.error(f"Không thể mở trang đăng nhập Google: {e}")
 
     async def switch_account(self):
         """Đăng xuất tài khoản Google hiện tại và xóa sạch session để đăng nhập tài khoản Gemini mới."""
+        logger.info("Đang đăng xuất và xóa sạch session tài khoản Google hiện tại...")
+        await self.shutdown()
+        
+        # Xóa sạch toàn bộ thư mục profile để đảm bảo Google không tự động đăng nhập lại tài khoản cũ
+        try:
+            if PROFILE_DIR.exists():
+                import shutil
+                shutil.rmtree(PROFILE_DIR, ignore_errors=True)
+                PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+                logger.info("Đã xóa sạch cache & session tài khoản cũ.")
+        except Exception as e:
+            logger.warning(f"Không thể xóa thư mục profile: {e}")
+
+        # Khởi tạo lại trình duyệt Chrome mới tinh
         await self.initialize()
         self.status = "waiting_login"
-        if self.context and self.page:
+        
+        if self.page:
             try:
-                logger.info("Đang tiến hành xóa cookies và đăng xuất tài khoản Google hiện tại...")
-                # Xóa sạch toàn bộ Cookies trong trình duyệt Playwright
-                await self.context.clear_cookies()
-                try:
-                    await self.page.goto("https://accounts.google.com/Logout", wait_until="domcontentloaded")
-                    await asyncio.sleep(1)
-                    await self.page.evaluate("try { localStorage.clear(); sessionStorage.clear(); } catch(e){}")
-                except Exception:
-                    pass
-                
-                # Điều hướng trực tiếp sang trang Thêm/Đăng nhập tài khoản Google mới
-                logger.info("Đã mở trang đăng nhập tài khoản Google/Gemini mới.")
-                await self.page.goto("https://accounts.google.com/AddSession?continue=https://gemini.google.com/app", wait_until="domcontentloaded")
+                logger.info("Đã mở trang Đăng nhập Google cho tài khoản mới.")
+                await self.page.goto("https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app", wait_until="domcontentloaded")
             except Exception as e:
-                logger.error(f"Lỗi khi thực hiện đăng xuất/chuyển tài khoản: {e}")
+                logger.error(f"Lỗi khi điều hướng sang trang đăng nhập: {e}")
 
     def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16") -> dict[str, Any]:
         """Thêm một nhiệm vụ tạo video mới vào hàng đợi."""
