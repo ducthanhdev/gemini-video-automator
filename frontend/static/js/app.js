@@ -407,7 +407,7 @@ function updateUI(data) {
     }
 
     // Cập nhật Danh sách Hàng đợi (Queue)
-    updateQueueList(data.queue);
+    updateQueueList(data.queue, data.current_task_id);
 
     // Phát hiện xem có nhiệm vụ nào vừa chuyển từ chạy sang hoàn thành để reload gallery
     if (lastStatusResponse) {
@@ -422,7 +422,7 @@ function updateUI(data) {
 }
 
 // 9. CẬP NHẬT BẢNG HÀNG ĐỢI NHIỆM VỤ
-function updateQueueList(queue) {
+function updateQueueList(queue, currentTaskId) {
     latestQueueList = queue || [];
     const container = document.getElementById("queue-list");
     if (!queue || queue.length === 0) {
@@ -432,7 +432,8 @@ function updateQueueList(queue) {
 
     let html = "";
     queue.forEach(task => {
-        const isActive = task.status !== "pending" && task.status !== "completed" && task.status !== "failed";
+        const isRunning = currentTaskId && task.id === currentTaskId;
+        const isActive = isRunning || (task.status !== "pending" && task.status !== "completed" && task.status !== "failed");
         const activeClass = isActive ? "active" : "";
         const progressPercent = task.progress || 0;
         
@@ -446,8 +447,8 @@ function updateQueueList(queue) {
             `;
         }
 
-        const canEdit = task.status === "pending" || task.status === "failed";
-        const canRetry = task.status === "completed" || task.status === "failed";
+        const canEdit = (task.status === "pending" || task.status === "failed") && !isRunning;
+        const canRetry = task.status !== "pending" && !isRunning;
         const hasCaption = !!(task.caption || task.hashtags);
         
         let actionsHtml = `

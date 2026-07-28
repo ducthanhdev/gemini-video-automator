@@ -45,11 +45,14 @@ class AutomationManager:
             if QUEUE_FILE.exists():
                 with open(QUEUE_FILE, "r", encoding="utf-8") as f:
                     self.queue = json.load(f)
-                # Đưa các tác vụ đang chạy dở dang hoặc bị kẹt về pending
+                # Đưa các tác vụ chưa hoàn thành (đang chạy dở dang hoặc bị kẹt) về pending khi restart server
                 for task in self.queue:
-                    if task.get("status") in ["processing", "generating", "uploading", "running", "optimizing", "stitching videos", "submitting prompt", "generating video (waiting 1-3 mins)", "downloading generated video"]:
+                    if task.get("status") not in ["completed", "failed", "pending"]:
+                        logger.warning(f"Tự động khôi phục tác vụ {task.get('id')} bị kẹt ở trạng thái '{task.get('status')}' về 'pending'.")
                         task["status"] = "pending"
                         task["progress"] = 0
+                        task["error"] = None
+                self._save_queue()
                 logger.info(f"Đã tải {len(self.queue)} nhiệm vụ từ file lưu trữ.")
             else:
                 self.queue = []
@@ -454,9 +457,9 @@ class AutomationManager:
         if not task:
             return False
             
-        # Chỉ chạy lại nếu không phải đang chạy
-        if self.current_task_id == task_id or task["status"] in ["processing", "generating", "uploading"]:
-            logger.warning(f"Không thể chạy lại nhiệm vụ đang hoạt động: {task_id}")
+        # Chỉ không cho chạy lại nếu nhiệm vụ đang thực sự chạy trong luồng hiện tại
+        if self.current_task_id == task_id:
+            logger.warning(f"Không thể chạy lại nhiệm vụ đang thực sự hoạt động: {task_id}")
             return False
             
         task["status"] = "pending"
@@ -480,9 +483,9 @@ class AutomationManager:
         if not task:
             return False
             
-        # Không cho sửa nhiệm vụ đang chạy
-        if self.current_task_id == task_id or task["status"] in ["processing", "generating", "uploading"]:
-            logger.warning(f"Không thể sửa nhiệm vụ đang hoạt động: {task_id}")
+        # Không cho sửa nhiệm vụ đang thực sự chạy trong luồng hiện tại
+        if self.current_task_id == task_id:
+            logger.warning(f"Không thể sửa nhiệm vụ đang thực sự hoạt động: {task_id}")
             return False
             
         task["user_description"] = user_description
@@ -709,7 +712,7 @@ class AutomationManager:
             except Exception as e:
                 logger.error(f"Không thể xóa thư mục tạm {temp_dir}: {e}")
 
-    async def _upload_images_to_page(self, image_paths: list[Path]) -> bool:
+    async def _upload_images_to_page(self, image_paths: list[Path], timeout_seconds: int = 90) -> bool:
         """Tải hình ảnh lên trình duyệt Gemini một cách linh hoạt, tránh dính timeout 30s."""
         if not self.page or self.page.is_closed():
             logger.error("Trình duyệt hoặc trang không tồn tại/đã bị đóng trong _upload_images_to_page.")
@@ -723,6 +726,7 @@ class AutomationManager:
             return False
 
         logger.info(f"Đang tiến hành tải {len(str_paths)} hình ảnh lên...")
+        upload_success = False
 
         # 1. Thử click nút Plus trước để mở menu hoặc kích hoạt file chooser
         plus_button = page.locator(
@@ -754,33 +758,165 @@ class AutomationManager:
                     await upload_option.click(force=True)
                 file_chooser = await fc_info.value
                 await file_chooser.set_files(str_paths)
-                await asyncio.sleep(3)
-                return True
+                upload_success = True
         except Exception as e:
             logger.info(f"Không nhấp được menu thả xuống ({e}). Chuyển sang phương án nạp file trực tiếp...")
 
-        # 3. Click nút Plus kết hợp expect_file_chooser
-        try:
-            if await plus_button.is_visible(timeout=2000):
-                async with page.expect_file_chooser(timeout=5000) as fc_info:
-                    await plus_button.click(force=True)
-                file_chooser = await fc_info.value
-                await file_chooser.set_files(str_paths)
-                await asyncio.sleep(3)
-                return True
-        except Exception as e:
-            logger.debug(f"File chooser trực tiếp từ Plus button thất bại ({e})...")
+        if not upload_success:
+            # 3. Click nút Plus kết hợp expect_file_chooser
+            try:
+                if await plus_button.is_visible(timeout=2000):
+                    async with page.expect_file_chooser(timeout=5000) as fc_info:
+                        await plus_button.click(force=True)
+                    file_chooser = await fc_info.value
+                    await file_chooser.set_files(str_paths)
+                    upload_success = True
+            except Exception as e:
+                logger.debug(f"File chooser trực tiếp từ Plus button thất bại ({e})...")
 
-        # 4. Fallback cuối cùng: nạp trực tiếp vào thẻ input file của DOM
-        try:
-            await page.set_input_files("input[type='file']", str_paths)
-            await asyncio.sleep(3)
-            logger.info("Đã nạp file thành công qua thẻ input[type='file'].")
+        if not upload_success:
+            # 4. Fallback cuối cùng: nạp trực tiếp vào thẻ input file của DOM
+            try:
+                await page.set_input_files("input[type='file']", str_paths)
+                logger.info("Đã nạp file thành công qua thẻ input[type='file'].")
+                upload_success = True
+            except Exception as e:
+                logger.error(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
+
+        if upload_success:
+            await self._wait_for_image_upload_completion(timeout_seconds=timeout_seconds)
             return True
-        except Exception as e:
-            logger.error(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
 
         return False
+
+    async def _wait_for_image_upload_completion(self, timeout_seconds: int = 90):
+        """Chờ cho đến khi tất cả ảnh tải lên xong (thanh tiến trình biến mất)."""
+        if not self.page or self.page.is_closed():
+            return
+
+        logger.info(f"Đang chờ quá trình tải ảnh hoàn tất trên giao diện Gemini (tối đa {timeout_seconds}s)...")
+
+        loading_selectors = [
+            "mat-progress-bar",
+            "mat-spinner",
+            ".uploading",
+            ".loading-spinner",
+            "[aria-label*='Uploading' i]",
+            "[aria-label*='Đang tải' i]",
+            "[class*='spinner']",
+            "[class*='loading']",
+            "[class*='progress-bar']"
+        ]
+
+        for sec in range(timeout_seconds):
+            uploading = False
+            for sel in loading_selectors:
+                try:
+                    elem = self.page.locator(sel).locator("visible=true").first
+                    if await elem.is_visible(timeout=250):
+                        uploading = True
+                        break
+                except Exception:
+                    pass
+
+            if not uploading:
+                logger.info(f"Tải ảnh hoàn tất sau {sec} giây.")
+                await asyncio.sleep(1.5)
+                return
+
+            if sec > 0 and sec % 5 == 0:
+                logger.info(f"Vẫn đang tiến hành tải ảnh lên... ({sec}/{timeout_seconds}s)")
+            await asyncio.sleep(1)
+
+        logger.warning(f"Thời gian chờ tải ảnh đã hết ({timeout_seconds}s). Tiếp tục xử lý bước tiếp theo...")
+
+    async def _wait_and_submit_prompt(self, input_element, timeout_seconds: int = 90) -> bool:
+        """Chờ nút Send/Enter sáng lên (enabled) và tải ảnh hoàn tất rồi mới gửi prompt."""
+        if not self.page or self.page.is_closed():
+            return False
+
+        logger.info("Đang chờ nút Send/Enter sáng lên và tải ảnh hoàn tất...")
+
+        send_button_selectors = (
+            "button[aria-label*='Send' i], "
+            "button[aria-label*='Gửi' i], "
+            "button[aria-label*='submit' i], "
+            "button[mattooltip*='Send' i], "
+            "button[mattooltip*='Gửi' i], "
+            "button.send-button, "
+            ".send-button-container button, "
+            "button:has(mat-icon[data-mat-icon-name='send']), "
+            "button:has(mat-icon:has-text('send'))"
+        )
+
+        for sec in range(timeout_seconds):
+            # 1. Kiểm tra trạng thái nút Send
+            send_btn = self.page.locator(send_button_selectors).locator("visible=true").first
+            btn_visible = False
+            btn_enabled = False
+
+            try:
+                if await send_btn.is_visible(timeout=300):
+                    btn_visible = True
+                    aria_disabled = await send_btn.get_attribute("aria-disabled")
+                    disabled_attr = await send_btn.get_attribute("disabled")
+
+                    if aria_disabled != "true" and disabled_attr is None and await send_btn.is_enabled():
+                        btn_enabled = True
+            except Exception:
+                pass
+
+            # 2. Kiểm tra xem ảnh có đang tiếp tục tải lên không
+            is_uploading = False
+            for sel in ["mat-progress-bar", "mat-spinner", ".uploading", "[aria-label*='Uploading' i]", "[aria-label*='Đang tải' i]"]:
+                try:
+                    if await self.page.locator(sel).locator("visible=true").first.is_visible(timeout=200):
+                        is_uploading = True
+                        break
+                except Exception:
+                    pass
+
+            # 3. Khi nút sáng và không còn tiến trình tải ảnh
+            if btn_visible and btn_enabled and not is_uploading:
+                logger.info(f"🚀 Nút Send/Enter đã SÁNG LÊN sau {sec}s! Tiến hành gửi prompt...")
+                try:
+                    await send_btn.click(force=True)
+                    await asyncio.sleep(1)
+                    return True
+                except Exception as e:
+                    logger.warning(f"Click nút Send thất bại ({e}), thử nhấn phím Enter trên ô nhập...")
+                    await input_element.focus()
+                    await input_element.press("Enter")
+                    await asyncio.sleep(1)
+                    return True
+
+            # 4. Fallback: Nếu ảnh đã tải xong và ô nhập có văn bản nhưng không bắt được selector nút Send
+            if sec >= 10 and not is_uploading:
+                try:
+                    val = await input_element.inner_text()
+                    if val and len(val.strip()) > 0:
+                        logger.info(f"Fallback sau {sec}s: Ảnh tải hoàn tất, đã có văn bản prompt. Tiến hành nhấn Enter...")
+                        await input_element.focus()
+                        await input_element.press("Enter")
+                        await asyncio.sleep(1)
+                        return True
+                except Exception:
+                    pass
+
+            if sec > 0 and sec % 5 == 0:
+                logger.info(f"Đang chờ ảnh tải xong & nút Send sáng lên... ({sec}/{timeout_seconds}s)")
+            await asyncio.sleep(1)
+
+        # Hết thời gian chờ: Thử nhấn Enter cưỡng chế
+        logger.warning(f"Đã hết thời gian chờ ({timeout_seconds}s). Nhấn Enter cưỡng chế...")
+        try:
+            await input_element.focus()
+            await input_element.press("Enter")
+            await asyncio.sleep(1)
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi khi nhấn Enter: {e}")
+            return False
 
     async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any]):
         """Điều khiển Playwright nạp ảnh, chọn khung dọc 9:16, gửi prompt và tải video."""
@@ -809,7 +945,9 @@ class AutomationManager:
             await chat_input.focus()
             await chat_input.fill(meta_prompt_to_send)
             await asyncio.sleep(1)
-            await chat_input.press("Enter")
+            
+            # Chờ ảnh tải xong và nút Send/Enter sáng lên trước khi gửi Meta-Prompt
+            await self._wait_and_submit_prompt(chat_input, timeout_seconds=90)
             
             logger.info("Đã gửi Meta-Prompt. Đang chờ Gemini sinh prompt tối ưu (chờ ít nhất 20 giây)...")
             await asyncio.sleep(20)  # Chờ ít nhất 20 giây để AI hoàn tất sinh prompt
@@ -1002,8 +1140,8 @@ class AutomationManager:
         await prompt_input.fill(prompt)
         await asyncio.sleep(1)
         
-        # Nhấn Enter để gửi đi
-        await prompt_input.press("Enter")
+        # Chờ ảnh tải hoàn tất và nút Send/Enter sáng lên trước khi gửi
+        await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90)
         logger.info("Đã gửi prompt lên Gemini. Đang chờ render video...")
         
         # 7. Chờ video được sinh ra
@@ -1044,39 +1182,96 @@ class AutomationManager:
 
         logger.info(f"Đường dẫn video phát hiện: {video_src[:60]}...")
         
-        # Thực hiện tải video qua JS fetch (nếu là blob) hoặc qua APIRequestContext (nếu là http/https)
-        try:
-            if video_src.startswith("blob:"):
-                logger.info("Phát hiện video dạng blob. Đang tải qua JS evaluate...")
-                base64_data = await self.page.evaluate("""async (url) => {
-                    const res = await fetch(url);
-                    const blob = await res.blob();
-                    return new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
-                    });
-                }""", video_src)
-                video_bytes = base64.b64decode(base64_data)
-            else:
-                logger.info("Phát hiện video dạng HTTP/HTTPS. Đang tải qua Playwright request context...")
-                response = await self.page.request.get(video_src)
-                if not response.ok:
-                    raise Exception(f"Tải video thất bại với status code: {response.status} {response.status_text}")
-                video_bytes = await response.body()
-                
-            with open(output_path, "wb") as f:
-                f.write(video_bytes)
-                
-            # Đảm bảo tệp đã được ghi hoàn tất xuống đĩa cứng và kiểm tra dung lượng > 10KB
-            await asyncio.sleep(2)
-            if not output_path.exists() or output_path.stat().st_size < 10000:
-                raise Exception(f"Video {output_path.name} sinh ra bị hỏng hoặc kích thước quá nhỏ ({output_path.stat().st_size if output_path.exists() else 0} bytes).")
+        # Thực hiện tải video linh hoạt 3 lớp (JS fetch có retry -> APIRequestContext có retry -> UI Download button)
+        download_success = False
 
-            logger.info(f"Đã lưu video thành công vào: {output_path} (Kích thước: {output_path.stat().st_size} bytes)")
-            await asyncio.sleep(2)  # Đợi 2s để đảm bảo phiên làm việc ổn định trước khi chuyển nhiệm vụ mới
-            
-        except Exception as e:
-            logger.error(f"Lỗi khi thực thi tải video: {e}")
-            raise Exception(f"Không thể tải video từ trình duyệt: {str(e)}")
+        # Lớp 1: Thử tải qua JS fetch trong trình duyệt (sử dụng session cookies & hỗ trợ retry 5 lần nếu gặp 503 Service Unavailable)
+        for attempt in range(1, 6):
+            try:
+                logger.info(f"Đang thử tải video qua JS fetch trong trình duyệt (Lần thử {attempt}/5)...")
+                res_data = await self.page.evaluate("""async (url) => {
+                    for (let i = 0; i < 3; i++) {
+                        try {
+                            const res = await fetch(url, { credentials: 'include' });
+                            if (res.ok) {
+                                const blob = await res.blob();
+                                return new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve({ ok: true, data: reader.result.split(',')[1] });
+                                    reader.onerror = () => resolve({ ok: false, error: 'FileReader error' });
+                                    reader.readAsDataURL(blob);
+                                });
+                            }
+                            if (res.status === 503 || res.status === 500) {
+                                await new Promise(r => setTimeout(r, 2500));
+                                continue;
+                            }
+                            return { ok: false, status: res.status, statusText: res.statusText };
+                        } catch (e) {
+                            await new Promise(r => setTimeout(r, 2500));
+                        }
+                    }
+                    return { ok: false, error: 'Failed after internal JS retries' };
+                }""", video_src)
+
+                if res_data and res_data.get("ok"):
+                    video_bytes = base64.b64decode(res_data["data"])
+                    with open(output_path, "wb") as f:
+                        f.write(video_bytes)
+                    await asyncio.sleep(1)
+                    if output_path.exists() and output_path.stat().st_size >= 10000:
+                        logger.info(f"Đã tải thành công video qua JS fetch (Kích thước: {output_path.stat().st_size} bytes)")
+                        download_success = True
+                        break
+                else:
+                    logger.warning(f"Lần thử {attempt} qua JS fetch thất bại: {res_data}")
+            except Exception as e:
+                logger.debug(f"Lỗi thử JS fetch (Lần {attempt}): {e}")
+            await asyncio.sleep(2.5)
+
+        # Lớp 2: Thử tải qua Playwright request context (có retry) nếu lớp 1 chưa thành công
+        if not download_success and not video_src.startswith("blob:"):
+            for attempt in range(1, 4):
+                try:
+                    logger.info(f"Đang thử tải video qua Playwright request context (Lần thử {attempt}/3)...")
+                    response = await self.page.request.get(video_src)
+                    if response.ok:
+                        video_bytes = await response.body()
+                        with open(output_path, "wb") as f:
+                            f.write(video_bytes)
+                        await asyncio.sleep(1)
+                        if output_path.exists() and output_path.stat().st_size >= 10000:
+                            logger.info(f"Đã tải thành công video qua request context (Kích thước: {output_path.stat().st_size} bytes)")
+                            download_success = True
+                            break
+                    else:
+                        logger.warning(f"Lần thử {attempt} qua request context thất bại: Status {response.status} {response.status_text}")
+                except Exception as e:
+                    logger.debug(f"Lỗi request context (Lần {attempt}): {e}")
+                await asyncio.sleep(3)
+
+        # Lớp 3: Thử click nút Tải xuống trên giao diện Gemini nếu 2 lớp trên thất bại
+        if not download_success:
+            try:
+                logger.info("Chuyển sang thử phương án click nút Tải xuống trên giao diện Gemini...")
+                download_btn = self.page.locator(
+                    "button[aria-label*='Download' i], button[aria-label*='Tải' i], button[mattooltip*='Download' i], button[mattooltip*='Tải' i], a[download]"
+                ).last
+                if await download_btn.is_visible(timeout=3000):
+                    async with self.page.expect_download(timeout=15000) as download_info:
+                        await download_btn.click(force=True)
+                    download = await download_info.value
+                    await download.save_as(output_path)
+                    await asyncio.sleep(1)
+                    if output_path.exists() and output_path.stat().st_size >= 10000:
+                        logger.info(f"Đã tải video thành công bằng nút Tải xuống trên giao diện!")
+                        download_success = True
+            except Exception as e:
+                logger.warning(f"Click nút Tải xuống trên giao diện chưa thành công: {e}")
+
+        # Kiểm tra cuối cùng
+        if not download_success or not output_path.exists() or output_path.stat().st_size < 10000:
+            raise Exception("Không thể tải video từ trình duyệt (Google CDN trả về 503 hoặc quá trình tải về bị ngắt).")
+
+        logger.info(f"Đã lưu video thành công vào: {output_path} (Kích thước: {output_path.stat().st_size} bytes)")
+        await asyncio.sleep(2)  # Đợi 2s để đảm bảo phiên làm việc ổn định trước khi chuyển nhiệm vụ mới
