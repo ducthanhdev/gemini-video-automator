@@ -194,10 +194,33 @@ function createPreviewThumbnail(filename) {
 function initProductUrlParser() {
     const btnParse = document.getElementById("btn-parse-url");
     const urlInput = document.getElementById("product-url-input");
+    const btnClearUrl = document.getElementById("btn-clear-url");
     const statusText = document.getElementById("parse-url-status");
     const descInput = document.getElementById("user-description");
 
     if (!btnParse || !urlInput) return;
+
+    // Toggle hiển thị nút Xóa (dấu X) dựa trên nội dung ô input
+    const toggleClearBtn = () => {
+        if (btnClearUrl) {
+            btnClearUrl.style.display = urlInput.value.trim() ? "flex" : "none";
+        }
+    };
+
+    urlInput.addEventListener("input", toggleClearBtn);
+    urlInput.addEventListener("keyup", toggleClearBtn);
+    urlInput.addEventListener("paste", () => setTimeout(toggleClearBtn, 50));
+    toggleClearBtn();
+
+    // Sự kiện click nút Xóa (dấu X) để xóa sạch link cũ
+    if (btnClearUrl) {
+        btnClearUrl.addEventListener("click", () => {
+            urlInput.value = "";
+            toggleClearBtn();
+            if (statusText) statusText.innerText = "";
+            urlInput.focus();
+        });
+    }
 
     btnParse.addEventListener("click", async (e) => {
         if (e) e.preventDefault();
@@ -331,6 +354,7 @@ function initActionButtons() {
     document.getElementById("btn-start").addEventListener("click", () => controlQueue("start"));
     document.getElementById("btn-stop").addEventListener("click", () => controlQueue("stop"));
     document.getElementById("btn-login").addEventListener("click", () => controlQueue("open-login"));
+    document.getElementById("btn-clear-queue")?.addEventListener("click", () => clearAllTasks());
     document.getElementById("btn-switch-account")?.addEventListener("click", async () => {
         if (confirm("Bạn có chắc chắn muốn đăng xuất và đổi tài khoản Google / Gemini khác không?")) {
             await controlQueue("switch-account");
@@ -795,6 +819,27 @@ window.copyTaskCaption = (taskId) => {
     }).catch(() => {
         showToast("Không thể tự động sao chép.", true);
     });
+};
+
+window.clearAllTasks = async () => {
+    const taskCount = (latestQueueList && Array.isArray(latestQueueList)) ? latestQueueList.length : 0;
+    const countText = taskCount > 0 ? ` (${taskCount} nhiệm vụ)` : '';
+    const confirmMsg = `Bạn có chắc chắn muốn XÓA TẤT CẢ các nhiệm vụ trong hàng đợi${countText} không?`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const res = await fetch("/api/tasks", { method: "DELETE" });
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`Đã xóa tất cả ${data.deleted_count !== undefined ? data.deleted_count : ''} nhiệm vụ thành công!`);
+            await pollStatus();
+        } else {
+            showToast("Không thể xóa toàn bộ hàng đợi!", "error");
+        }
+    } catch (e) {
+        showToast("Lỗi kết nối máy chủ!", "error");
+    }
 };
 
 window.deleteTask = async (taskId, status) => {

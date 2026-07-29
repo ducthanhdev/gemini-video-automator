@@ -451,6 +451,31 @@ class AutomationManager:
             
         return True
 
+    async def clear_queue(self) -> int:
+        """Xóa tất cả các nhiệm vụ khỏi hàng đợi. Nếu có nhiệm vụ đang chạy, dừng tiến trình."""
+        count = len(self.queue)
+        if count == 0:
+            return 0
+
+        if self.current_task_id:
+            logger.info(f"Hủy bỏ nhiệm vụ đang chạy {self.current_task_id} do xóa toàn bộ hàng đợi.")
+            if self.loop_task:
+                self.loop_task.cancel()
+                try:
+                    await self.loop_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Lỗi khi hủy loop_task trong clear_queue: {e}")
+                self.loop_task = None
+            self.current_task_id = None
+
+        self.queue = []
+        self._save_queue()
+        self.status = "idle"
+        logger.info(f"Đã xóa toàn bộ {count} nhiệm vụ khỏi hàng đợi.")
+        return count
+
     async def retry_task(self, task_id: str) -> bool:
         """Chạy lại một nhiệm vụ (đổi trạng thái về pending)."""
         task = self.get_task(task_id)

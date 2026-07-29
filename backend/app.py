@@ -157,6 +157,11 @@ async def create_task(task_data: TaskCreate):
         
     return {"status": "success", "tasks": created_tasks, "task": created_tasks[0]}
 
+@app.delete("/api/tasks")
+async def clear_all_tasks():
+    deleted_count = await manager.clear_queue()
+    return {"status": "success", "deleted_count": deleted_count}
+
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(task_id: str):
     success = await manager.delete_task(task_id)
