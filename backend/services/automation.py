@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 from playwright.async_api import async_playwright
-from backend.config import PROFILE_DIR, UPLOAD_DIR, OUTPUT_DIR, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPLATE, CLIP_DURATION, QUEUE_FILE
+from backend.config import PROFILE_DIR, UPLOAD_DIR, OUTPUT_DIR, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPLATE, CLIP_DURATION, QUEUE_FILE, SETTINGS_FILE
 from backend.services.prompt_optimizer import optimize_prompt
 from backend.services import video_processor
 from backend.services.product_parser import ProductParser
@@ -35,8 +35,44 @@ class AutomationManager:
         self.system_instruction = DEFAULT_SYSTEM_INSTRUCTION
         self.meta_prompt_template = DEFAULT_META_PROMPT_TEMPLATE
 
-        # Tải hàng đợi đã lưu từ trước
+        # Tải cấu hình và hàng đợi đã lưu từ trước
+        self._load_settings()
         self._load_queue()
+
+    def _load_settings(self):
+        """Tải cấu hình cài đặt từ file settings.json nếu có."""
+        import json
+        try:
+            if SETTINGS_FILE.exists():
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.api_key = data.get("api_key", "")
+                self.prompt_mode = data.get("prompt_mode", "api")
+                self.long_video_mode = data.get("long_video_mode", "last_frame")
+                self.system_instruction = data.get("system_instruction") or DEFAULT_SYSTEM_INSTRUCTION
+                self.meta_prompt_template = data.get("meta_prompt_template") or DEFAULT_META_PROMPT_TEMPLATE
+                logger.info("Đã tải cấu hình cài đặt từ file settings.json.")
+            else:
+                self._save_settings()
+        except Exception as e:
+            logger.error(f"Lỗi khi tải cấu hình cài đặt từ file: {e}")
+
+    def _save_settings(self):
+        """Lưu cấu hình cài đặt vào file settings.json."""
+        import json
+        try:
+            data = {
+                "api_key": self.api_key,
+                "prompt_mode": self.prompt_mode,
+                "long_video_mode": self.long_video_mode,
+                "system_instruction": self.system_instruction,
+                "meta_prompt_template": self.meta_prompt_template
+            }
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            logger.info("Đã lưu cấu hình cài đặt vào file settings.json.")
+        except Exception as e:
+            logger.error(f"Lỗi khi lưu cấu hình cài đặt vào file: {e}")
 
     def _load_queue(self):
         """Tải hàng đợi từ file queue.json nếu có."""
@@ -809,135 +845,258 @@ class AutomationManager:
                 logger.error(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
 
         if upload_success:
-            await self._wait_for_image_upload_completion(timeout_seconds=timeout_seconds)
+            logger.info("Đã gửi tệp ảnh vào trình duyệt thành công.")
             return True
 
         return False
 
-    async def _wait_for_image_upload_completion(self, timeout_seconds: int = 90):
-        """Chờ cho đến khi tất cả ảnh tải lên xong (thanh tiến trình biến mất)."""
-        if not self.page or self.page.is_closed():
-            return
-
-        logger.info(f"Đang chờ quá trình tải ảnh hoàn tất trên giao diện Gemini (tối đa {timeout_seconds}s)...")
-
-        loading_selectors = [
-            "mat-progress-bar",
-            "mat-spinner",
-            ".uploading",
-            ".loading-spinner",
-            "[aria-label*='Uploading' i]",
-            "[aria-label*='Đang tải' i]",
-            "[class*='spinner']",
-            "[class*='loading']",
-            "[class*='progress-bar']"
-        ]
-
-        for sec in range(timeout_seconds):
-            uploading = False
-            for sel in loading_selectors:
-                try:
-                    elem = self.page.locator(sel).locator("visible=true").first
-                    if await elem.is_visible(timeout=250):
-                        uploading = True
-                        break
-                except Exception:
-                    pass
-
-            if not uploading:
-                logger.info(f"Tải ảnh hoàn tất sau {sec} giây.")
-                await asyncio.sleep(1.5)
-                return
-
-            if sec > 0 and sec % 5 == 0:
-                logger.info(f"Vẫn đang tiến hành tải ảnh lên... ({sec}/{timeout_seconds}s)")
-            await asyncio.sleep(1)
-
-        logger.warning(f"Thời gian chờ tải ảnh đã hết ({timeout_seconds}s). Tiếp tục xử lý bước tiếp theo...")
-
-    async def _wait_and_submit_prompt(self, input_element, timeout_seconds: int = 90) -> bool:
-        """Chờ nút Send/Enter sáng lên (enabled) và tải ảnh hoàn tất rồi mới gửi prompt."""
+    async def _upload_image_in_video_mode(self, image_paths: list[Path]) -> bool:
+        """Tải tệp ảnh lên chuyên biệt cho giao diện 'Tạo video' của Gemini."""
         if not self.page or self.page.is_closed():
             return False
 
-        logger.info("Đang chờ nút Send/Enter sáng lên và tải ảnh hoàn tất...")
+        str_paths = [str(p.resolve()) for p in image_paths if p.exists()]
+        if not str_paths:
+            logger.warning("Không có đường dẫn tệp ảnh hợp lệ để tải lên.")
+            return False
+
+        logger.info(f"Đang tiến hành tải {len(str_paths)} ảnh lên giao diện Tạo Video...")
+        page = self.page
+
+        # 1. Danh sách selector nút biểu tượng ảnh 🖼️ trong giao diện Tạo video
+        image_button_selectors = [
+            "button:has(mat-icon:has-text('image'))",
+            "button:has(mat-icon:has-text('add_photo_alternate'))",
+            "button:has(mat-icon:has-text('photo'))",
+            "button:has(mat-icon:has-text('insert_photo'))",
+            "button:has(mat-icon[data-mat-icon-name*='image'])",
+            "button:has(mat-icon[data-mat-icon-name*='photo'])",
+            "button[aria-label*='ảnh' i]",
+            "button[aria-label*='image' i]",
+            "button[aria-label*='photo' i]",
+            "button[aria-label*='tải' i]",
+            "button[aria-label*='upload' i]",
+            "button[mattooltip*='ảnh' i]",
+            "button[mattooltip*='image' i]",
+            "button[mattooltip*='photo' i]",
+            "button[mattooltip*='tải' i]",
+            "button[mattooltip*='upload' i]",
+            "button:has-text('Thêm ảnh')",
+            "button:has-text('Add image')",
+            "button:has-text('Tải ảnh')",
+            "button:has-text('Upload image')",
+            "button:has-text('Chọn ảnh')"
+        ]
+
+        # Phương án 1: Click nút biểu tượng ảnh 🖼️ trên thanh công cụ Tạo video và dùng file_chooser
+        for sel in image_button_selectors:
+            try:
+                btn = page.locator(sel).locator("visible=true").first
+                if await btn.is_visible(timeout=800):
+                    logger.info(f"Phát hiện nút ảnh 🖼️ bằng selector: {sel}")
+                    try:
+                        async with page.expect_file_chooser(timeout=3500) as fc_info:
+                            await btn.click(force=True)
+                        file_chooser = await fc_info.value
+                        await file_chooser.set_files(str_paths)
+                        logger.info("⚡ Đã chọn tệp ảnh thành công qua file_chooser!")
+                        await asyncio.sleep(1)
+                        return True
+                    except Exception as fc_err:
+                        logger.debug(f"Click nút {sel} không kích hoạt file chooser ({fc_err}), tiếp tục thử phương án khác...")
+            except Exception:
+                pass
+
+        # Phương án 2: Click nút Plus (+) rồi chọn Tải ảnh lên
+        try:
+            plus_btn = page.locator(
+                "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i], button[mattooltip*='Upload' i], button[mattooltip*='Tải' i]"
+            ).locator("visible=true").first
+            if await plus_btn.is_visible(timeout=1000):
+                async with page.expect_file_chooser(timeout=3500) as fc_info:
+                    await plus_btn.click(force=True)
+                file_chooser = await fc_info.value
+                await file_chooser.set_files(str_paths)
+                logger.info("⚡ Đã nạp tệp ảnh qua nút Plus (+).")
+                await asyncio.sleep(1)
+                return True
+        except Exception as e:
+            logger.debug(f"Nạp qua Plus button không kích hoạt file chooser: {e}")
+
+        # Phương án 3: Kích hoạt file input trực tiếp bằng Playwright set_input_files
+        try:
+            file_inputs = page.locator("input[type='file']")
+            count = await file_inputs.count()
+            if count > 0:
+                await file_inputs.first.set_input_files(str_paths)
+                logger.info(f"⚡ Đã nạp tệp ảnh qua thẻ input[type='file'] (Tìm thấy {count} thẻ input).")
+                await asyncio.sleep(1)
+                return True
+        except Exception as e:
+            logger.warning(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
+
+        # Phương án 4: Dùng JS kích hoạt click() trên thẻ input[type='file'] đồng thời với expect_file_chooser
+        try:
+            async with page.expect_file_chooser(timeout=3000) as fc_info:
+                await page.evaluate("() => { const inp = document.querySelector(\"input[type='file']\"); if (inp) inp.click(); }")
+            file_chooser = await fc_info.value
+            await file_chooser.set_files(str_paths)
+            logger.info("⚡ Đã nạp tệp ảnh bằng JS trigger input.click().")
+            await asyncio.sleep(1)
+            return True
+        except Exception as js_err:
+            logger.debug(f"JS trigger input.click() thất bại: {js_err}")
+
+        # Fallback cuối cùng
+        return await self._upload_images_to_page(image_paths)
+
+    async def _is_image_attached_in_dom(self) -> bool:
+        """Kiểm tra xem thẻ preview hoặc thumbnail ảnh đã thực sự xuất hiện trong ô nhập Gemini chưa."""
+        if not self.page or self.page.is_closed():
+            return False
+
+        image_preview_selectors = [
+            "uploader-file",
+            "file-preview",
+            ".image-preview",
+            ".preview-image",
+            "[data-test-id*='file']",
+            "img[src*='blob:']",
+            "img[src*='googleusercontent']",
+            "img[src*='data:image']",
+            "button[aria-label*='Remove' i]",
+            "button[aria-label*='Xóa' i]",
+            "button[aria-label*='Gỡ' i]",
+            "button[aria-label*='Delete' i]",
+            "mat-chip",
+            "[class*='attachment']",
+            "[class*='thumbnail']",
+            "[class*='preview'] img",
+            "figure img",
+            "div[class*='image'] img"
+        ]
+
+        for sel in image_preview_selectors:
+            try:
+                elem = self.page.locator(sel).locator("visible=true").first
+                if await elem.is_visible(timeout=100):
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    async def _wait_and_submit_prompt(self, input_element, timeout_seconds: int = 30, image_paths: list[Path] | None = None) -> bool:
+        """
+        BẮT BUỘC ĐỦ 3 ĐIỀU KIỆN MỚI CHO PHÉP ENTER/SEND:
+        1. Ảnh ĐÃ THỰC SỰ XUẤT HIỆN trong ô preview.
+        2. Thanh tiến trình nạp tệp ĐÃ HOÀN TẤT.
+        3. Nút Send / Enter ĐÃ ACTIVE (enabled).
+        """
+        if not self.page or self.page.is_closed():
+            return False
+
+        require_image = bool(image_paths and len(image_paths) > 0)
+        logger.info(f"Đang theo dõi ô nhập & nút Send... (Cần có ảnh đính kèm: {require_image})")
 
         send_button_selectors = (
             "button[aria-label*='Send' i], "
             "button[aria-label*='Gửi' i], "
             "button[aria-label*='submit' i], "
+            "button[aria-label*='tạo' i], "
+            "button[aria-label*='create' i], "
+            "button[aria-label*='generate' i], "
             "button[mattooltip*='Send' i], "
             "button[mattooltip*='Gửi' i], "
             "button.send-button, "
             ".send-button-container button, "
             "button:has(mat-icon[data-mat-icon-name='send']), "
-            "button:has(mat-icon:has-text('send'))"
+            "button:has(mat-icon:has-text('send')), "
+            "button:has-text('Gửi'), "
+            "button:has-text('Send'), "
+            "button:has-text('Tạo video'), "
+            "button:has-text('Create video'), "
+            "button:has-text('Tạo'), "
+            "button:has-text('Create')"
         )
 
-        for sec in range(timeout_seconds):
-            # 1. Kiểm tra trạng thái nút Send
-            send_btn = self.page.locator(send_button_selectors).locator("visible=true").first
-            btn_visible = False
-            btn_enabled = False
+        progress_selectors = [
+            "mat-progress-bar",
+            "uploader-file mat-spinner",
+            "file-preview mat-spinner",
+            "[role='progressbar']"
+        ]
 
-            try:
-                if await send_btn.is_visible(timeout=300):
-                    btn_visible = True
-                    aria_disabled = await send_btn.get_attribute("aria-disabled")
-                    disabled_attr = await send_btn.get_attribute("disabled")
+        max_checks = int(timeout_seconds / 0.2)  # Poll 200ms
 
-                    if aria_disabled != "true" and disabled_attr is None and await send_btn.is_enabled():
-                        btn_enabled = True
-            except Exception:
-                pass
+        for check in range(max_checks):
+            # 1. Kiểm tra ảnh đã đính kèm trong DOM chưa
+            has_image = True
+            if require_image:
+                has_image = await self._is_image_attached_in_dom()
 
-            # 2. Kiểm tra xem ảnh có đang tiếp tục tải lên không
-            is_uploading = False
-            for sel in ["mat-progress-bar", "mat-spinner", ".uploading", "[aria-label*='Uploading' i]", "[aria-label*='Đang tải' i]"]:
+            # 2. Tự động kích hoạt nạp lại ảnh nếu sau 2.5s hoặc 5s vẫn chưa thấy thẻ ảnh trong DOM
+            if require_image and not has_image and check in [12, 25] and image_paths:
+                logger.warning(f"Phát hiện chưa có ảnh trong ô preview (Check {check}). Kích hoạt nạp ảnh lại...")
                 try:
-                    if await self.page.locator(sel).locator("visible=true").first.is_visible(timeout=200):
+                    await self._upload_image_in_video_mode(image_paths)
+                    await asyncio.sleep(0.5)
+                    has_image = await self._is_image_attached_in_dom()
+                except Exception as e:
+                    logger.error(f"Lỗi nạp lại file: {e}")
+
+            # 3. Kiểm tra thanh progress tải ảnh có đang chạy không
+            is_uploading = False
+            for sel in progress_selectors:
+                try:
+                    if await self.page.locator(sel).locator("visible=true").first.is_visible(timeout=80):
                         is_uploading = True
                         break
                 except Exception:
                     pass
 
-            # 3. Khi nút sáng và không còn tiến trình tải ảnh
-            if btn_visible and btn_enabled and not is_uploading:
-                logger.info(f"🚀 Nút Send/Enter đã SÁNG LÊN sau {sec}s! Tiến hành gửi prompt...")
+            # 4. Kiểm tra nút Send/Enter đã ACTIVE chưa
+            send_btn = self.page.locator(send_button_selectors).locator("visible=true").first
+            btn_active = False
+
+            try:
+                if await send_btn.is_visible(timeout=100):
+                    aria_disabled = await send_btn.get_attribute("aria-disabled")
+                    disabled_attr = await send_btn.get_attribute("disabled")
+
+                    if aria_disabled != "true" and disabled_attr is None and await send_btn.is_enabled():
+                        btn_active = True
+            except Exception:
+                pass
+
+            # 5. CHỈ ENTER/GỬI KHI ĐỦ 3 ĐIỀU KIỆN THỎA MÃN (Có ảnh + Hết Upload + Nút Send ACTIVE)
+            if has_image and not is_uploading and btn_active:
+                logger.info(f"🚀 THỎA MÃN ĐỦ 3 ĐIỀU KIỆN (Đã có ảnh + Hết upload + Nút Enter ACTIVE sau {check * 0.2:.1f}s)! Kích hoạt Enter/Gửi tạo video...")
                 try:
                     await send_btn.click(force=True)
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)
                     return True
                 except Exception as e:
-                    logger.warning(f"Click nút Send thất bại ({e}), thử nhấn phím Enter trên ô nhập...")
+                    logger.warning(f"Click nút Send bị gián đoạn ({e}), thử bấm phím Enter...")
                     await input_element.focus()
                     await input_element.press("Enter")
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)
                     return True
 
-            # 4. Fallback: Nếu ảnh đã tải xong và ô nhập có văn bản nhưng không bắt được selector nút Send
-            if sec >= 10 and not is_uploading:
-                try:
-                    val = await input_element.inner_text()
-                    if val and len(val.strip()) > 0:
-                        logger.info(f"Fallback sau {sec}s: Ảnh tải hoàn tất, đã có văn bản prompt. Tiến hành nhấn Enter...")
-                        await input_element.focus()
-                        await input_element.press("Enter")
-                        await asyncio.sleep(1)
-                        return True
-                except Exception:
-                    pass
+            if check > 0 and check % 15 == 0:
+                logger.info(f"Vẫn đang chờ nạp ảnh & nút Send... (has_image={has_image}, is_uploading={is_uploading}, btn_active={btn_active}) [{check * 0.2:.1f}s/{timeout_seconds}s]")
 
-            if sec > 0 and sec % 5 == 0:
-                logger.info(f"Đang chờ ảnh tải xong & nút Send sáng lên... ({sec}/{timeout_seconds}s)")
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.2)
 
-        # Hết thời gian chờ: Thử nhấn Enter cưỡng chế
-        logger.warning(f"Đã hết thời gian chờ ({timeout_seconds}s). Nhấn Enter cưỡng chế...")
+        if require_image and not (await self._is_image_attached_in_dom()):
+            logger.error(f"❌ Không thể gửi prompt vì ẢNH CHƯA ĐƯỢC NẠP VÀO TRÌNH DUYỆT sau {timeout_seconds}s!")
+            return False
+
+        logger.warning(f"Hết thời gian chờ ({timeout_seconds}s). Nhấn Enter cưỡng chế...")
         try:
             await input_element.focus()
             await input_element.press("Enter")
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             return True
         except Exception as e:
             logger.error(f"Lỗi khi nhấn Enter: {e}")
@@ -972,7 +1131,7 @@ class AutomationManager:
             await asyncio.sleep(1)
             
             # Chờ ảnh tải xong và nút Send/Enter sáng lên trước khi gửi Meta-Prompt
-            await self._wait_and_submit_prompt(chat_input, timeout_seconds=90)
+            await self._wait_and_submit_prompt(chat_input, timeout_seconds=90, image_paths=image_paths)
             
             logger.info("Đã gửi Meta-Prompt. Đang chờ Gemini sinh prompt tối ưu (chờ ít nhất 20 giây)...")
             await asyncio.sleep(20)  # Chờ ít nhất 20 giây để AI hoàn tất sinh prompt
@@ -1011,37 +1170,80 @@ class AutomationManager:
             await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
             await asyncio.sleep(2)
 
-        # 2. Click nút Plus (+) Menu tải lên
-        logger.info("Đang click vào Menu tải lên...")
-        # Tìm nút plus hoặc paperclip (chỉ chọn các nút có nhãn tải lên/thêm/add/upload và đang hiển thị)
-        plus_button = self.page.locator(
-            "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i]"
+        # 2 & 3. Kiểm tra xem trình duyệt đã ở sẵn chế độ Tạo Video hay chưa trước khi click Menu
+        ratio_button = self.page.locator(
+            "button:has-text('16:9'), button:has-text('9:16'), "
+            "button:has-text('ngang'), button:has-text('dọc'), "
+            "[role='button']:has-text('16:9'), [role='button']:has-text('9:16')"
         ).locator("visible=true").first
-        
-        if not await plus_button.is_visible():
-            # Fallback nếu không tìm thấy qua label
-            plus_button = self.page.locator(
-                ".simplified-input-menu-container button, .leading-actions-wrapper button, [class*='input-menu'] button"
-            ).locator("visible=true").first
-            
-        await plus_button.click(force=True)
-        await asyncio.sleep(1.5)
 
-        # 3. Chọn "Tạo video" (hoặc "Create video")
-        logger.info("Đang chọn chế độ 'Tạo video'...")
-        selector = (
-            "toolbox-drawer-item:has-text('Tạo video'), "
-            "toolbox-drawer-item:has-text('Create video'), "
-            ".gem-menu-item-label:has-text('Tạo video'), "
-            ".gem-menu-item-label:has-text('Create video'), "
-            "button[role='menuitemcheckbox']:has-text('Tạo video'), "
-            "button[role='menuitemcheckbox']:has-text('Create video')"
-        )
-        video_menu_item = self.page.locator(selector).first
-        if not await video_menu_item.is_visible():
-            raise Exception("Không tìm thấy mục 'Tạo video' trong menu tải lên của Gemini.")
-        await video_menu_item.click(force=True)
-        await asyncio.sleep(2.5)
+        is_already_video_mode = await ratio_button.is_visible(timeout=1500)
+
+        if not is_already_video_mode:
+            logger.info("Đang mở Menu tải lên và chọn chế độ 'Tạo video'...")
+            video_menu_found = False
+
+            for attempt in range(1, 4):
+                # Click nút Plus (+)
+                plus_button = self.page.locator(
+                    "button[aria-label*='upload' i], button[aria-label*='tải' i], button[aria-label*='thêm' i], button[aria-label*='add' i], button[mattooltip*='Upload' i], button[mattooltip*='Tải' i]"
+                ).locator("visible=true").first
+
+                if not await plus_button.is_visible():
+                    plus_button = self.page.locator(
+                        ".simplified-input-menu-container button, .leading-actions-wrapper button, [class*='input-menu'] button, button.plus-button"
+                    ).locator("visible=true").first
+
+                try:
+                    if await plus_button.is_visible(timeout=2000):
+                        await plus_button.click(force=True)
+                        await asyncio.sleep(1.5)
+                except Exception as e:
+                    logger.debug(f"Click nút Plus (Lần {attempt}): {e}")
+
+                # Tìm mục 'Tạo video' / 'Create video' / 'Veo' trong menu popup
+                video_selectors = [
+                    "toolbox-drawer-item:has-text('Tạo video')",
+                    "toolbox-drawer-item:has-text('Create video')",
+                    "toolbox-drawer-item:has-text('Veo')",
+                    ".gem-menu-item-label:has-text('Tạo video')",
+                    ".gem-menu-item-label:has-text('Create video')",
+                    ".gem-menu-item-label:has-text('Veo')",
+                    "[role*='menuitem']:has-text('Tạo video')",
+                    "[role*='menuitem']:has-text('Create video')",
+                    "[role*='menuitem']:has-text('Veo')",
+                    "button[role='menuitemcheckbox']:has-text('Tạo video')",
+                    "button[role='menuitemcheckbox']:has-text('Create video')",
+                    "button:has-text('Tạo video')",
+                    "button:has-text('Create video')",
+                    "span:has-text('Tạo video')",
+                    "span:has-text('Create video')",
+                    "div:has-text('Tạo video')",
+                    "div:has-text('Create video')",
+                    "button[aria-label*='video' i]",
+                    "*[role*='menuitem']:has-text('video' i)"
+                ]
+
+                for sel in video_selectors:
+                    try:
+                        item = self.page.locator(sel).locator("visible=true").first
+                        if await item.is_visible(timeout=600):
+                            logger.info(f"Tìm thấy mục 'Tạo video' bằng selector: {sel}")
+                            await item.click(force=True)
+                            await asyncio.sleep(2.5)
+                            video_menu_found = True
+                            break
+                    except Exception:
+                        pass
+
+                if video_menu_found:
+                    break
+
+                logger.warning(f"Lần thử {attempt}/3 chưa chọn được mục 'Tạo video'. Thử lại...")
+                await asyncio.sleep(1)
+
+            if not video_menu_found:
+                logger.warning("Không phát hiện menu 'Tạo video' trong popup. Tiếp tục thử tạo video trên giao diện hiện tại...")
 
         # 3.5 Bỏ qua modal giới thiệu "Dùng thử" nếu có
         try:
@@ -1142,12 +1344,12 @@ class AutomationManager:
         else:
             logger.warning("Không tìm thấy nút chỉnh tỷ lệ khung hình video trên giao diện Gemini.")
 
-        # 5. Tải ảnh lên
-        logger.info(f"Đang tải {len(image_paths)} hình ảnh lên...")
+        # 5. Tải ảnh lên chuyên biệt cho giao diện Tạo video
+        logger.info(f"Đang tải {len(image_paths)} hình ảnh lên giao diện Tạo Video...")
         self.update_task(task, status="uploading images to Gemini")
         
-        await self._upload_images_to_page(image_paths)
-        await asyncio.sleep(2)  # Chờ ảnh tải lên trình duyệt
+        await self._upload_image_in_video_mode(image_paths)
+        await asyncio.sleep(1.5)  # Chờ tệp được đính kèm vào DOM
 
         # 6. Nhập prompt và gửi
         logger.info("Đang điền prompt tạo video...")
@@ -1166,7 +1368,7 @@ class AutomationManager:
         await asyncio.sleep(1)
         
         # Chờ ảnh tải hoàn tất và nút Send/Enter sáng lên trước khi gửi
-        await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90)
+        await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90, image_paths=image_paths)
         logger.info("Đã gửi prompt lên Gemini. Đang chờ render video...")
         
         # 7. Chờ video được sinh ra

@@ -85,7 +85,8 @@ async def update_settings(settings: SettingsUpdate):
     manager.long_video_mode = settings.long_video_mode
     manager.system_instruction = settings.system_instruction
     manager.meta_prompt_template = settings.meta_prompt_template
-    logger.info("Cập nhật cấu hình thành công.")
+    manager._save_settings()
+    logger.info("Cập nhật và lưu cấu hình cố định thành công.")
     return {"status": "success", "settings": {
         "api_key": manager.api_key,
         "prompt_mode": manager.prompt_mode,

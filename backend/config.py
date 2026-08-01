@@ -7,6 +7,7 @@ UPLOAD_DIR = STORAGE_DIR / "uploads"
 OUTPUT_DIR = STORAGE_DIR / "outputs"
 PROFILE_DIR = STORAGE_DIR / "browser_profile"
 QUEUE_FILE = STORAGE_DIR / "queue.json"
+SETTINGS_FILE = STORAGE_DIR / "settings.json"
 
 for directory in [STORAGE_DIR, UPLOAD_DIR, OUTPUT_DIR, PROFILE_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
