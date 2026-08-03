@@ -735,26 +735,92 @@ textarea {
 }
 
 .video-item {
-    background: #0b0f19;
-    border: 1px solid var(--card-border);
-    border-radius: var(--border-radius-md);
+    position: relative;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    transition: border-color 0.2s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(8px);
 }
 
 .video-item:hover {
-    border-color: var(--card-border-hover);
+    border-color: rgba(99, 102, 241, 0.45);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.video-item.selected {
+    border-color: #6366f1;
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 0 1px #6366f1;
+    background: rgba(99, 102, 241, 0.08);
 }
 
 .video-wrapper {
     position: relative;
     width: 100%;
-    height: 280px;
-    background: black;
+    height: 260px;
+    background: #000;
     cursor: pointer;
     overflow: hidden;
+}
+
+.video-checkbox-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.video-select-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+    margin: 0;
+}
+
+.video-select-checkbox:hover {
+    border-color: #a5b4fc;
+    transform: scale(1.08);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+}
+
+.video-select-checkbox:checked {
+    background: #6366f1;
+    border-color: #6366f1;
+    box-shadow: 0 0 14px rgba(99, 102, 241, 0.7);
+}
+
+.video-checkbox-badge .custom-checkmark {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(0.4);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: white;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.video-select-checkbox:checked + .custom-checkmark {
+    opacity: 1;
+    transform: scale(1);
 }
 
 .video-wrapper::after {

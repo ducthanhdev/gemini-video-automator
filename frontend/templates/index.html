@@ -215,7 +215,17 @@
             </div>
 
             <div class="card gallery-card">
-                <h2><span class="icon">🎥</span> Thư viện video đã tạo</h2>
+                <div class="gallery-card-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                    <h2 style="margin: 0;"><span class="icon">🎥</span> Thư viện video đã tạo</h2>
+                    <div class="gallery-actions" style="display: flex; gap: 8px; align-items: center;">
+                        <button id="btn-select-all-videos" onclick="toggleSelectAllVideos()" class="btn-task-action" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); color: #818cf8; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Chọn tất cả video">
+                            ☑️ Chọn tất cả
+                        </button>
+                        <button id="btn-delete-selected-videos" onclick="deleteSelectedVideos()" class="btn-task-action btn-delete" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer; display: none; align-items: center; gap: 4px; font-weight: 600;" title="Xóa các video đã chọn">
+                            🗑️ Xóa đã chọn (<span id="selected-video-count">0</span>)
+                        </button>
+                    </div>
+                </div>
                 <div class="video-grid" id="video-grid">
                     <div class="empty-state">Chưa có video nào được tạo thành công.</div>
                 </div>

@@ -87,8 +87,8 @@ async def update_settings(settings: SettingsUpdate):
     manager.long_video_mode = settings.long_video_mode
     manager.system_instruction = settings.system_instruction
     manager.meta_prompt_template = settings.meta_prompt_template
-    manager.voice_gender = settings.voice_gender
-    manager.enable_voiceover = settings.enable_voiceover
+    setattr(manager, "voice_gender", getattr(settings, "voice_gender", "hoaimy"))
+    setattr(manager, "enable_voiceover", getattr(settings, "enable_voiceover", True))
     manager._save_settings()
     logger.info("Cập nhật và lưu cấu hình cố định thành công.")
     return {"status": "success", "settings": {
@@ -97,8 +97,8 @@ async def update_settings(settings: SettingsUpdate):
         "long_video_mode": manager.long_video_mode,
         "system_instruction": manager.system_instruction,
         "meta_prompt_template": manager.meta_prompt_template,
-        "voice_gender": manager.voice_gender,
-        "enable_voiceover": manager.enable_voiceover
+        "voice_gender": getattr(manager, "voice_gender", "hoaimy"),
+        "enable_voiceover": getattr(manager, "enable_voiceover", True)
     }}
 
 @app.get("/api/settings")
@@ -289,4 +289,28 @@ async def delete_video(filename: str):
     except Exception as e:
         logger.error(f"Lỗi khi xóa video {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Không thể xóa video: {str(e)}")
+
+class BatchDeleteVideosRequest(BaseModel):
+    filenames: List[str]
+
+@app.post("/api/videos/batch-delete")
+async def batch_delete_videos(req: BatchDeleteVideosRequest):
+    """Xóa hàng loạt các file video được chọn trong thư mục outputs."""
+    deleted_count = 0
+    for filename in req.filenames:
+        safe_filename = Path(filename).name
+        if not safe_filename or safe_filename != filename or ".." in filename:
+            continue
+        mp4_path = OUTPUT_DIR / safe_filename
+        if mp4_path.exists():
+            try:
+                mp4_path.unlink(missing_ok=True)
+                stem = mp4_path.stem
+                (OUTPUT_DIR / f"{stem}.json").unlink(missing_ok=True)
+                (OUTPUT_DIR / f"{stem}.txt").unlink(missing_ok=True)
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Lỗi khi xóa file {filename}: {e}")
+    logger.info(f"Đã xóa hàng loạt {deleted_count} video khỏi thư viện.")
+    return {"status": "success", "deleted_count": deleted_count}
 

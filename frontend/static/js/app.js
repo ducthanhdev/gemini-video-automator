@@ -527,6 +527,7 @@ async function loadVideos() {
         const videos = await res.json();
         if (videos.length === 0) {
             grid.innerHTML = '<div class="empty-state">Chưa có video nào được tạo thành công.</div>';
+            updateSelectedVideosCount();
             return;
         }
 
@@ -534,6 +535,10 @@ async function loadVideos() {
         videos.forEach((video, index) => {
             html += `
                 <div class="video-item" data-index="${index}">
+                    <div class="video-checkbox-badge" onclick="event.stopPropagation();">
+                        <input type="checkbox" class="video-select-checkbox" data-filename="${video.filename}" onclick="event.stopPropagation(); updateSelectedVideosCount();" title="Chọn video này">
+                        <span class="custom-checkmark">✓</span>
+                    </div>
                     <div class="video-wrapper" data-url="${video.url}">
                         <video src="${video.url}" preload="metadata"></video>
                     </div>
@@ -586,8 +591,67 @@ async function loadVideos() {
                 });
             }
         });
+        updateSelectedVideosCount();
     } catch (e) {
         console.error("Lỗi nạp thư viện video:", e);
+    }
+}
+
+// Cập nhật số lượng video được chọn
+function updateSelectedVideosCount() {
+    const checkboxes = document.querySelectorAll(".video-select-checkbox:checked");
+    const count = checkboxes.length;
+    const countElem = document.getElementById("selected-video-count");
+    const btnDeleteSelected = document.getElementById("btn-delete-selected-videos");
+    
+    if (countElem) countElem.innerText = count;
+    if (btnDeleteSelected) {
+        btnDeleteSelected.style.display = count > 0 ? "flex" : "none";
+    }
+}
+
+// Bật/tắt chọn tất cả video
+function toggleSelectAllVideos() {
+    const checkboxes = document.querySelectorAll(".video-select-checkbox");
+    if (checkboxes.length === 0) return;
+    
+    const checkedCount = document.querySelectorAll(".video-select-checkbox:checked").length;
+    const shouldCheck = checkedCount < checkboxes.length;
+    
+    checkboxes.forEach(cb => {
+        cb.checked = shouldCheck;
+    });
+    updateSelectedVideosCount();
+}
+
+// Xóa hàng loạt video đã chọn
+async function deleteSelectedVideos() {
+    const checkedBoxes = document.querySelectorAll(".video-select-checkbox:checked");
+    if (checkedBoxes.length === 0) {
+        showToast("Vui lòng chọn ít nhất 1 video để xóa.", true);
+        return;
+    }
+    
+    const filenames = Array.from(checkedBoxes).map(cb => cb.dataset.filename);
+    if (!confirm(`Bạn có chắc chắn muốn xóa ${filenames.length} video đã chọn khỏi thư viện?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/videos/batch-delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filenames })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`🗑️ Đã xóa thành công ${data.deleted_count} video!`);
+            loadVideos();
+        } else {
+            showToast("Không thể xóa hàng loạt video.", true);
+        }
+    } catch (e) {
+        showToast("Lỗi kết nối khi xóa video hàng loạt.", true);
     }
 }
 

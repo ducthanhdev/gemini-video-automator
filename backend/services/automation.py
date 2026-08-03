@@ -71,8 +71,8 @@ class AutomationManager:
                 "long_video_mode": self.long_video_mode,
                 "system_instruction": self.system_instruction,
                 "meta_prompt_template": self.meta_prompt_template,
-                "voice_gender": self.voice_gender,
-                "enable_voiceover": self.enable_voiceover
+                "voice_gender": getattr(self, "voice_gender", "hoaimy"),
+                "enable_voiceover": getattr(self, "enable_voiceover", True)
             }
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
