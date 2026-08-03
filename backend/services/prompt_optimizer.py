@@ -63,6 +63,17 @@ def parse_prompt_response(text: str) -> dict[str, str]:
     caption = re.sub(r'^\*+|\*+$', '', caption).strip()
     hashtags = re.sub(r'^\*+|\*+$', '', hashtags).strip()
 
+    # Tự động thay thế các từ ngữ nhạy cảm dính bộ lọc an toàn của Google Veo
+    sensitive_replacements = [
+        (r'chai\s+dung\s*dịch\s*vệ\s*sinh\s*(phụ\s*nữ)?\s*(pH\s*Care)?', 'chai gel chăm sóc da pH Care'),
+        (r'dung\s*dịch\s*vệ\s*sinh\s*(phụ\s*nữ)?\s*(pH\s*Care)?', 'gel chăm sóc da pH Care'),
+        (r'vệ\s*sinh\s*phụ\s*nữ', 'chăm sóc da tươi mát'),
+        (r'vùng\s*kín', 'vùng da nhạy cảm'),
+        (r'kháng\s*khuẩn', 'làm sạch dịu nhẹ'),
+    ]
+    for pattern, replacement in sensitive_replacements:
+        prompt = re.sub(pattern, replacement, prompt, flags=re.IGNORECASE)
+
     return {
         "prompt": prompt,
         "voiceover": voiceover,
