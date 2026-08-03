@@ -4,7 +4,6 @@ import json
 import logging
 import urllib.request
 import urllib.parse
-from pathlib import Path
 from typing import Dict, Any, List
 from backend.config import UPLOAD_DIR
 

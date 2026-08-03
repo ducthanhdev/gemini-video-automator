@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 from pathlib import Path
 from PIL import Image
@@ -7,8 +8,6 @@ from google.genai import types
 from backend.config import DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
-
-import re
 
 def parse_prompt_response(text: str) -> dict[str, str]:
     """Phân tách văn bản phản hồi từ Gemini thành các thành phần prompt, voiceover, caption và hashtags."""
@@ -29,10 +28,14 @@ def parse_prompt_response(text: str) -> dict[str, str]:
     hashtags = ""
 
     matches = []
-    if prompt_match: matches.append(('prompt', prompt_match.start(), prompt_match.end()))
-    if voiceover_match: matches.append(('voiceover', voiceover_match.start(), voiceover_match.end()))
-    if caption_match: matches.append(('caption', caption_match.start(), caption_match.end()))
-    if hashtags_match: matches.append(('hashtags', hashtags_match.start(), hashtags_match.end()))
+    if prompt_match:
+        matches.append(('prompt', prompt_match.start(), prompt_match.end()))
+    if voiceover_match:
+        matches.append(('voiceover', voiceover_match.start(), voiceover_match.end()))
+    if caption_match:
+        matches.append(('caption', caption_match.start(), caption_match.end()))
+    if hashtags_match:
+        matches.append(('hashtags', hashtags_match.start(), hashtags_match.end()))
 
     matches.sort(key=lambda x: x[1])
 

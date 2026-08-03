@@ -69,7 +69,7 @@ async def merge_audio_with_video(video_path: Path, audio_path: Path, output_vide
             str(temp_output.resolve())
         ]
 
-        logger.info(f"Đang tiến hành ghép âm thanh lồng tiếng vào video bằng FFmpeg...")
+        logger.info("Đang tiến hành ghép âm thanh lồng tiếng vào video bằng FFmpeg...")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,

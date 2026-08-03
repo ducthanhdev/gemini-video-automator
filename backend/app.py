@@ -1,5 +1,7 @@
 import socket
 import logging
+import json
+import uuid
 from pathlib import Path
 from typing import List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
@@ -12,7 +14,6 @@ from contextlib import asynccontextmanager
 
 from backend.config import BASE_DIR, UPLOAD_DIR, OUTPUT_DIR, PORT
 from backend.services.automation import AutomationManager
-from backend.services.product_parser import ProductParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -87,8 +88,8 @@ async def update_settings(settings: SettingsUpdate):
     manager.long_video_mode = settings.long_video_mode
     manager.system_instruction = settings.system_instruction
     manager.meta_prompt_template = settings.meta_prompt_template
-    setattr(manager, "voice_gender", getattr(settings, "voice_gender", "hoaimy"))
-    setattr(manager, "enable_voiceover", getattr(settings, "enable_voiceover", True))
+    manager.voice_gender = settings.voice_gender
+    manager.enable_voiceover = settings.enable_voiceover
     manager._save_settings()
     logger.info("Cập nhật và lưu cấu hình cố định thành công.")
     return {"status": "success", "settings": {
@@ -97,8 +98,8 @@ async def update_settings(settings: SettingsUpdate):
         "long_video_mode": manager.long_video_mode,
         "system_instruction": manager.system_instruction,
         "meta_prompt_template": manager.meta_prompt_template,
-        "voice_gender": getattr(manager, "voice_gender", "hoaimy"),
-        "enable_voiceover": getattr(manager, "enable_voiceover", True)
+        "voice_gender": manager.voice_gender,
+        "enable_voiceover": manager.enable_voiceover
     }}
 
 @app.get("/api/settings")
@@ -109,8 +110,8 @@ async def get_settings():
         "long_video_mode": manager.long_video_mode,
         "system_instruction": manager.system_instruction,
         "meta_prompt_template": manager.meta_prompt_template,
-        "voice_gender": getattr(manager, "voice_gender", "hoaimy"),
-        "enable_voiceover": getattr(manager, "enable_voiceover", True)
+        "voice_gender": manager.voice_gender,
+        "enable_voiceover": manager.enable_voiceover
     }
 
 @app.post("/api/upload")
@@ -120,7 +121,6 @@ async def upload_files(files: List[UploadFile] = File(...)):
         if not file.filename:
             continue
         # Tạo tên file an toàn tránh trùng lặp
-        import uuid
         ext = Path(file.filename).suffix
         filename = f"{uuid.uuid4()}{ext}"
         file_path = UPLOAD_DIR / filename
@@ -232,7 +232,6 @@ async def list_videos():
     """Liệt kê danh sách các video kết quả đã hoàn thành đính kèm thông tin Caption/Hashtags."""
     videos = []
     try:
-        import json
         for p in OUTPUT_DIR.glob("*.mp4"):
             stat = p.stat()
             json_path = OUTPUT_DIR / f"{p.stem}.json"
