@@ -403,10 +403,23 @@ class GeminiBot:
             logger.error(f"Lỗi khi nhấn Enter: {e}")
             return False
 
-    async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any], update_task_fn, settings: dict[str, Any]):
+    async def _automate_browser_for_clip(
+        self,
+        image_paths: list[Path],
+        prompt: str,
+        output_path: Path,
+        task: dict[str, Any],
+        update_task_fn,
+        settings: dict[str, Any],
+        cycle: int = 0,
+        num_cycles: int = 1
+    ):
         """Điều khiển Playwright nạp ảnh, chọn khung dọc 9:16, gửi prompt và tải video."""
         if not self.page or self.page.is_closed():
             raise Exception("Trình duyệt chưa được khởi tạo hoặc đã bị đóng.")
+
+        base_prog = 10 + int((cycle / num_cycles) * 75)
+        cycle_span = max(10, int(75 / num_cycles))
 
         logger.info("Điều hướng đến Gemini...")
         await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
@@ -570,13 +583,15 @@ class GeminiBot:
             logger.warning("Không tìm thấy nút chỉnh tỷ lệ khung hình video trên giao diện Gemini.")
 
         logger.info(f"Đang tải {len(image_paths)} hình ảnh lên giao diện Tạo Video...")
-        update_task_fn(task, status="uploading images to Gemini")
+        p_upload = base_prog + int(cycle_span * 0.15)
+        update_task_fn(task, status=f"uploading images (cycle {cycle + 1}/{num_cycles})", progress=p_upload)
         
         await self._upload_image_in_video_mode(image_paths)
         await asyncio.sleep(1.5)
 
         logger.info("Đang điền prompt tạo video...")
-        update_task_fn(task, status="submitting prompt")
+        p_submit = base_prog + int(cycle_span * 0.25)
+        update_task_fn(task, status=f"submitting prompt (cycle {cycle + 1}/{num_cycles})", progress=p_submit)
         
         prompt_input = self.page.locator(PROMPT_INPUT_SELECTOR).first
         
@@ -589,8 +604,6 @@ class GeminiBot:
         
         await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90, image_paths=image_paths)
         logger.info("Đã gửi prompt lên Gemini. Đang chờ render video...")
-        
-        update_task_fn(task, status="generating video (waiting 1-3 mins)")
         
         initial_video_count = await self.page.locator(VIDEO_PLAYER_SELECTOR).count()
         
@@ -707,4 +720,6 @@ class GeminiBot:
             raise Exception("Không thể tải video từ trình duyệt (Google CDN trả về 503 hoặc quá trình tải về bị ngắt).")
 
         logger.info(f"Đã lưu video thành công vào: {output_path} (Kích thước: {output_path.stat().st_size} bytes)")
+        p_done = base_prog + cycle_span
+        update_task_fn(task, status=f"completed clip {cycle + 1}/{num_cycles}", progress=p_done)
         await asyncio.sleep(2)

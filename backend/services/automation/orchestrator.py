@@ -126,7 +126,7 @@ class AutomationManager:
     async def _upload_image_in_video_mode(self, image_paths: list[Path]):
         return await self.bot._upload_image_in_video_mode(image_paths)
 
-    async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any]):
+    async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any], cycle: int = 0, num_cycles: int = 1):
         settings_dict = {
             "api_key": self.api_key,
             "prompt_mode": self.prompt_mode,
@@ -135,7 +135,9 @@ class AutomationManager:
         return await self.bot._automate_browser_for_clip(
             image_paths, prompt, output_path, task,
             update_task_fn=self.update_task,
-            settings=settings_dict
+            settings=settings_dict,
+            cycle=cycle,
+            num_cycles=num_cycles
         )
 
     # Orchestrator Task Management & Execution
@@ -336,10 +338,10 @@ class AutomationManager:
                         "Maintain the style, details, camera movement direction, and lighting from the image."
                     )
                 
-                await self._automate_browser_for_clip(cycle_images, prompt_to_send, clip_path, task)
+                await self._automate_browser_for_clip(cycle_images, prompt_to_send, clip_path, task, cycle=cycle, num_cycles=num_cycles)
                 generated_clips.append(clip_path)
 
-            self.update_task(task, status="stitching videos", progress=90)
+            self.update_task(task, status="stitching videos", progress=88)
             
             output_filename = f"video_{task['id']}.mp4"
             final_output_path = OUTPUT_DIR / output_filename
@@ -362,7 +364,7 @@ class AutomationManager:
             if getattr(self, "enable_voiceover", True):
                 voiceover_text = task.get("voiceover", "")
                 if voiceover_text and voiceover_text.strip():
-                    self.update_task(task, status="generating AI voiceover audio")
+                    self.update_task(task, status="generating AI voiceover audio", progress=93)
                     logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {getattr(self, 'voice_gender', 'hoaimy')})...")
                     voice_key = getattr(self, "voice_gender", "hoaimy")
                     voice_success = await process_video_voiceover(final_output_path, voiceover_text, voice_key=voice_key)
