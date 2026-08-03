@@ -34,6 +34,8 @@ class AutomationManager:
         self.long_video_mode = "last_frame"  # last_frame hoặc crossfade
         self.system_instruction = DEFAULT_SYSTEM_INSTRUCTION
         self.meta_prompt_template = DEFAULT_META_PROMPT_TEMPLATE
+        self.voice_gender = "hoaimy"  # hoaimy (nữ) hoặc namminh (nam)
+        self.enable_voiceover = True
 
         # Tải cấu hình và hàng đợi đã lưu từ trước
         self._load_settings()
@@ -51,6 +53,8 @@ class AutomationManager:
                 self.long_video_mode = data.get("long_video_mode", "last_frame")
                 self.system_instruction = data.get("system_instruction") or DEFAULT_SYSTEM_INSTRUCTION
                 self.meta_prompt_template = data.get("meta_prompt_template") or DEFAULT_META_PROMPT_TEMPLATE
+                self.voice_gender = data.get("voice_gender", "hoaimy")
+                self.enable_voiceover = data.get("enable_voiceover", True)
                 logger.info("Đã tải cấu hình cài đặt từ file settings.json.")
             else:
                 self._save_settings()
@@ -66,7 +70,9 @@ class AutomationManager:
                 "prompt_mode": self.prompt_mode,
                 "long_video_mode": self.long_video_mode,
                 "system_instruction": self.system_instruction,
-                "meta_prompt_template": self.meta_prompt_template
+                "meta_prompt_template": self.meta_prompt_template,
+                "voice_gender": self.voice_gender,
+                "enable_voiceover": self.enable_voiceover
             }
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -631,14 +637,16 @@ class AutomationManager:
         )
         if isinstance(opt_res, dict):
             optimized = opt_res.get("prompt", "")
+            voiceover = opt_res.get("voiceover", "")
             caption = opt_res.get("caption", "")
             hashtags = opt_res.get("hashtags", "")
         else:
             optimized = str(opt_res)
+            voiceover = ""
             caption = ""
             hashtags = ""
 
-        self.update_task(task, optimized_prompt=optimized, caption=caption, hashtags=hashtags, progress=10)
+        self.update_task(task, optimized_prompt=optimized, voiceover=voiceover, caption=caption, hashtags=hashtags, progress=10)
 
         # 3. Tính toán số lượng clip cần sinh dựa trên thời lượng
         # Mỗi clip mặc định dài CLIP_DURATION giây, đảm bảo tối thiểu là 1 clip
@@ -716,6 +724,20 @@ class AutomationManager:
                 if not success or not final_output_path.exists():
                     raise Exception("Lỗi khi ghép nối các đoạn video ngắn thành video tổng hợp.")
 
+            # 4.5. Tự động lồng tiếng AI cho video (Nếu được bật và có kịch bản voiceover)
+            if getattr(self, "enable_voiceover", True):
+                voiceover_text = task.get("voiceover", "")
+                if voiceover_text and voiceover_text.strip():
+                    self.update_task(task, status="generating AI voiceover audio")
+                    logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {getattr(self, 'voice_gender', 'hoaimy')})...")
+                    from backend.services.voiceover import process_video_voiceover
+                    voice_key = getattr(self, "voice_gender", "hoaimy")
+                    voice_success = await process_video_voiceover(final_output_path, voiceover_text, voice_key=voice_key)
+                    if voice_success:
+                        logger.info("⚡ Tự động lồng tiếng AI và ghép âm thanh thành công!")
+                    else:
+                        logger.warning("Lồng tiếng AI không thành công, giữ nguyên video gốc.")
+
             # 5. Lưu trữ tệp thông tin JSON và TXT đính kèm theo video
             meta_json_path = OUTPUT_DIR / f"video_{task['id']}.json"
             meta_txt_path = OUTPUT_DIR / f"video_{task['id']}.txt"
@@ -727,9 +749,10 @@ class AutomationManager:
             caption_val = task.get("caption", "")
             hashtags_val = task.get("hashtags", "")
             prompt_val = task.get("optimized_prompt", "")
+            voiceover_val = task.get("voiceover", "")
             
             # Nếu vì lý do nào đó caption/hashtags chưa được trích xuất, thử phân tách dự phòng
-            if not caption_val or not hashtags_val:
+            if not caption_val or not hashtags_val or not voiceover_val:
                 fallback_parsed = parse_prompt_response(prompt_val)
                 if fallback_parsed.get("caption"):
                     caption_val = fallback_parsed["caption"]
@@ -737,6 +760,9 @@ class AutomationManager:
                 if fallback_parsed.get("hashtags"):
                     hashtags_val = fallback_parsed["hashtags"]
                     task["hashtags"] = hashtags_val
+                if fallback_parsed.get("voiceover"):
+                    voiceover_val = fallback_parsed["voiceover"]
+                    task["voiceover"] = voiceover_val
                 if fallback_parsed.get("prompt"):
                     prompt_val = fallback_parsed["prompt"]
                     task["optimized_prompt"] = prompt_val
@@ -744,6 +770,7 @@ class AutomationManager:
             meta_data = {
                 "video_filename": output_filename,
                 "prompt": prompt_val,
+                "voiceover": voiceover_val,
                 "caption": caption_val,
                 "hashtags": hashtags_val,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -752,7 +779,7 @@ class AutomationManager:
             with open(meta_json_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data, f, ensure_ascii=False, indent=2)
                 
-            txt_content = f"--- BÀI ĐĂNG CAPTION ---\n{caption_val}\n\n--- HASHTAGS ---\n{hashtags_val}\n\n--- PROMPT VIDEO ---\n{prompt_val}"
+            txt_content = f"--- KỊCH BẢN LỒNG TIẾNG ---\n{voiceover_val}\n\n--- BÀI ĐĂNG CAPTION ---\n{caption_val}\n\n--- HASHTAGS ---\n{hashtags_val}\n\n--- PROMPT VIDEO ---\n{prompt_val}"
             with open(meta_txt_path, "w", encoding="utf-8") as f:
                 f.write(txt_content)
 

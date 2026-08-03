@@ -53,6 +53,8 @@ class SettingsUpdate(BaseModel):
     long_video_mode: str
     system_instruction: str = ""
     meta_prompt_template: str = ""
+    voice_gender: str = "hoaimy"
+    enable_voiceover: bool = True
 
 class TaskCreate(BaseModel):
     images: List[str]
@@ -85,6 +87,8 @@ async def update_settings(settings: SettingsUpdate):
     manager.long_video_mode = settings.long_video_mode
     manager.system_instruction = settings.system_instruction
     manager.meta_prompt_template = settings.meta_prompt_template
+    manager.voice_gender = settings.voice_gender
+    manager.enable_voiceover = settings.enable_voiceover
     manager._save_settings()
     logger.info("Cập nhật và lưu cấu hình cố định thành công.")
     return {"status": "success", "settings": {
@@ -92,7 +96,9 @@ async def update_settings(settings: SettingsUpdate):
         "prompt_mode": manager.prompt_mode,
         "long_video_mode": manager.long_video_mode,
         "system_instruction": manager.system_instruction,
-        "meta_prompt_template": manager.meta_prompt_template
+        "meta_prompt_template": manager.meta_prompt_template,
+        "voice_gender": manager.voice_gender,
+        "enable_voiceover": manager.enable_voiceover
     }}
 
 @app.get("/api/settings")
@@ -102,7 +108,9 @@ async def get_settings():
         "prompt_mode": manager.prompt_mode,
         "long_video_mode": manager.long_video_mode,
         "system_instruction": manager.system_instruction,
-        "meta_prompt_template": manager.meta_prompt_template
+        "meta_prompt_template": manager.meta_prompt_template,
+        "voice_gender": getattr(manager, "voice_gender", "hoaimy"),
+        "enable_voiceover": getattr(manager, "enable_voiceover", True)
     }
 
 @app.post("/api/upload")

@@ -112,6 +112,23 @@
                         </div>
                     </div>
 
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="enable-voiceover">Tự động lồng tiếng AI (1-Click)</label>
+                            <select id="enable-voiceover">
+                                <option value="true">Bật (Tự lồng giọng đọc vào MP4)</option>
+                                <option value="false">Tắt (Chỉ giữ video gốc)</option>
+                            </select>
+                        </div>
+                        <div class="form-group half">
+                            <label for="voice-gender">Giọng đọc AI Tiếng Việt</label>
+                            <select id="voice-gender">
+                                <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, mượt mà)</option>
+                                <option value="namminh">Nam - Nam Minh (Trầm ấm, uy tín)</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="advanced-settings-toggle" id="advanced-toggle">
                         <span>🛠️ Cấu hình Prompt nâng cao</span>
                         <span class="toggle-arrow" id="toggle-arrow">▼</span>
@@ -219,14 +236,16 @@
             </video>
             <div class="modal-caption-box" id="modal-caption-box" style="display: none;">
                 <div class="caption-header" style="display: flex; flex-direction: column; gap: 8px;">
-                    <span style="font-weight: 600; font-size: 0.95rem;">📝 Bài Đăng & Hashtags Quảng Cáo:</span>
+                    <span style="font-weight: 600; font-size: 0.95rem;">📝 Bài Đăng & Kịch Bản Lồng Tiếng:</span>
                     <div class="caption-actions" style="display: flex; gap: 6px; flex-wrap: wrap;">
                         <button id="btn-copy-all" class="btn btn-secondary btn-sm" style="background:#4f46e5; color:#fff; font-weight:600;">📋 Copy Tất cả</button>
+                        <button id="btn-copy-voiceover" class="btn btn-secondary btn-sm">🎙️ Copy Voiceover</button>
                         <button id="btn-copy-caption" class="btn btn-secondary btn-sm">📝 Copy Caption</button>
                         <button id="btn-copy-hashtags" class="btn btn-secondary btn-sm">🏷️ Copy Hashtags</button>
                         <button id="btn-delete-modal-video" class="btn btn-danger btn-sm" style="background:#ef4444; color:#fff; font-weight:600; margin-left:auto;">🗑️ Xóa Video</button>
                     </div>
                 </div>
+                <div class="voiceover-text" id="modal-voiceover-text" style="user-select: text; -webkit-user-select: text; margin-top: 8px; font-style: italic; color: #a7f3d0; background: rgba(16, 185, 129, 0.1); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #10b981; display: none;"></div>
                 <div class="caption-text" id="modal-caption-text" style="user-select: text; -webkit-user-select: text; margin-top: 8px;"></div>
                 <div class="hashtags-text" id="modal-hashtags-text" style="user-select: text; -webkit-user-select: text; margin-top: 6px;"></div>
             </div>

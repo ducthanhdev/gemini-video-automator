@@ -46,6 +46,12 @@ async function initSettings() {
             document.getElementById("long-video-mode").value = data.long_video_mode || "last_frame";
             document.getElementById("system-instruction").value = data.system_instruction || "";
             document.getElementById("meta-prompt-template").value = data.meta_prompt_template || "";
+            
+            const enableVoElem = document.getElementById("enable-voiceover");
+            if (enableVoElem) enableVoElem.value = data.enable_voiceover !== undefined ? String(data.enable_voiceover) : "true";
+            
+            const voiceGenderElem = document.getElementById("voice-gender");
+            if (voiceGenderElem) voiceGenderElem.value = data.voice_gender || "hoaimy";
         }
     } catch (e) {
         console.error("Lỗi nạp cấu hình cài đặt:", e);
@@ -68,6 +74,8 @@ async function initSettings() {
         const longVideoMode = document.getElementById("long-video-mode").value;
         const systemInstruction = document.getElementById("system-instruction").value;
         const metaPromptTemplate = document.getElementById("meta-prompt-template").value;
+        const enableVoiceover = document.getElementById("enable-voiceover") ? (document.getElementById("enable-voiceover").value === "true") : true;
+        const voiceGender = document.getElementById("voice-gender") ? document.getElementById("voice-gender").value : "hoaimy";
 
         try {
             const res = await fetch("/api/settings", {
@@ -78,7 +86,9 @@ async function initSettings() {
                     prompt_mode: promptMode,
                     long_video_mode: longVideoMode,
                     system_instruction: systemInstruction,
-                    meta_prompt_template: metaPromptTemplate
+                    meta_prompt_template: metaPromptTemplate,
+                    enable_voiceover: enableVoiceover,
+                    voice_gender: voiceGender
                 })
             });
             if (res.ok) {
@@ -614,8 +624,10 @@ function openVideoModal(videoData) {
     const captionBox = document.getElementById("modal-caption-box");
     const captionText = document.getElementById("modal-caption-text");
     const hashtagsText = document.getElementById("modal-hashtags-text");
+    const voiceoverText = document.getElementById("modal-voiceover-text");
     
     const btnCopyAll = document.getElementById("btn-copy-all");
+    const btnCopyVoiceover = document.getElementById("btn-copy-voiceover");
     const btnCopyCaption = document.getElementById("btn-copy-caption");
     const btnCopyHashtags = document.getElementById("btn-copy-hashtags");
     const btnDeleteModal = document.getElementById("btn-delete-modal-video");
@@ -640,20 +652,49 @@ function openVideoModal(videoData) {
         if (captionText) captionText.innerText = videoData.caption || "(Chưa có bài đăng quảng cáo)";
         if (hashtagsText) hashtagsText.innerText = videoData.hashtags || "";
 
+        if (voiceoverText) {
+            if (videoData.voiceover) {
+                voiceoverText.innerText = "🎙️ Lồng tiếng: " + videoData.voiceover;
+                voiceoverText.style.display = "block";
+            } else {
+                voiceoverText.style.display = "none";
+            }
+        }
+
         if (btnCopyAll) {
             btnCopyAll.onclick = () => {
-                const fullCopy = `${videoData.caption || ''}\n\n${videoData.hashtags || ''}`.trim();
+                const parts = [];
+                if (videoData.voiceover) parts.push(`🎙️ KỊCH BẢN LỒNG TIẾNG:\n${videoData.voiceover}`);
+                if (videoData.caption) parts.push(`📝 CAPTION:\n${videoData.caption}`);
+                if (videoData.hashtags) parts.push(`🏷️ HASHTAGS:\n${videoData.hashtags}`);
+                const fullCopy = parts.join('\n\n').trim();
                 if (!fullCopy) {
                     showToast("Chưa có thông tin để sao chép.", true);
                     return;
                 }
                 copyTextToClipboard(fullCopy).then(() => {
-                    showToast("📋 Đã sao chép Bài đăng & Hashtags!");
+                    showToast("📋 Đã sao chép Kịch bản, Caption & Hashtags!");
                 }).catch(() => {
                     showToast("Lỗi khi sao chép tự động.", true);
                 });
             };
         }
+
+        if (btnCopyVoiceover) {
+            btnCopyVoiceover.onclick = () => {
+                const voOnly = (videoData.voiceover || '').trim();
+                if (!voOnly) {
+                    showToast("Không có kịch bản Lồng tiếng để sao chép.", true);
+                    return;
+                }
+                copyTextToClipboard(voOnly).then(() => {
+                    showToast("🎙️ Đã sao chép Kịch bản Lồng tiếng!");
+                }).catch(() => {
+                    showToast("Lỗi khi sao chép tự động.", true);
+                });
+            };
+        }
+
         if (btnCopyCaption) {
             btnCopyCaption.onclick = () => {
                 const captionOnly = (videoData.caption || '').trim();
@@ -676,6 +717,8 @@ function openVideoModal(videoData) {
                     return;
                 }
                 copyTextToClipboard(hashtagsOnly).then(() => {
+                    showToast("🏷️ Đã sao chép Hashtags!");
+                }).catch(() => {
                     showToast("🏷️ Đã sao chép Hashtags!");
                 }).catch(() => {
                     showToast("Lỗi khi sao chép tự động.", true);

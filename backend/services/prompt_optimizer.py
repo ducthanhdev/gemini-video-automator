@@ -11,41 +11,43 @@ logger = logging.getLogger(__name__)
 import re
 
 def parse_prompt_response(text: str) -> dict[str, str]:
-    """Phân tách văn bản phản hồi từ Gemini thành các thành phần prompt, caption và hashtags."""
+    """Phân tách văn bản phản hồi từ Gemini thành các thành phần prompt, voiceover, caption và hashtags."""
     if not text:
-        return {"prompt": "", "caption": "", "hashtags": ""}
+        return {"prompt": "", "voiceover": "", "caption": "", "hashtags": ""}
         
     text = text.strip()
     
-    # Tìm các vị trí thẻ nhãn PROMPT, CAPTION, HASHTAGS bằng regex (chấp nhận cả markdown **, #, số thứ tự, PROMPT VIDEO...)
+    # Tìm các vị trí thẻ nhãn PROMPT, VOICEOVER, CAPTION, HASHTAGS bằng regex
     prompt_match = re.search(r'(?:\*\*|#|\d+\.\s*)?PROMPT(?:\s*VIDEO)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    voiceover_match = re.search(r'(?:\*\*|#|\d+\.\s*)?VOICEOVER(?:\s*LỒNG\s*TIẾNG)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
     caption_match = re.search(r'(?:\*\*|#|\d+\.\s*)?CAPTION(?:\s*BÀI\s*ĐĂNG)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
     hashtags_match = re.search(r'(?:\*\*|#|\d+\.\s*)?HASHTAGS?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
 
     prompt = text
+    voiceover = ""
     caption = ""
     hashtags = ""
 
-    if prompt_match and caption_match:
-        p_start = prompt_match.end()
-        c_start = caption_match.start()
-        prompt = text[p_start:c_start].strip()
+    matches = []
+    if prompt_match: matches.append(('prompt', prompt_match.start(), prompt_match.end()))
+    if voiceover_match: matches.append(('voiceover', voiceover_match.start(), voiceover_match.end()))
+    if caption_match: matches.append(('caption', caption_match.start(), caption_match.end()))
+    if hashtags_match: matches.append(('hashtags', hashtags_match.start(), hashtags_match.end()))
 
-        if hashtags_match and hashtags_match.start() > c_start:
-            c_end = hashtags_match.start()
-            caption = text[caption_match.end():c_end].strip()
-            hashtags = text[hashtags_match.end():].strip()
-        else:
-            caption = text[caption_match.end():].strip()
-    elif caption_match:
-        prompt = text[:caption_match.start()].strip()
-        if hashtags_match and hashtags_match.start() > caption_match.start():
-            caption = text[caption_match.end():hashtags_match.start()].strip()
-            hashtags = text[hashtags_match.end():].strip()
-        else:
-            caption = text[caption_match.end():].strip()
+    matches.sort(key=lambda x: x[1])
 
-    # Làm sạch ký tự thừa xung quanh prompt, caption, hashtags
+    if matches:
+        sections = {}
+        for i, (key, start, end) in enumerate(matches):
+            next_start = matches[i + 1][1] if i + 1 < len(matches) else len(text)
+            sections[key] = text[end:next_start].strip()
+
+        prompt = sections.get('prompt', prompt)
+        voiceover = sections.get('voiceover', '')
+        caption = sections.get('caption', '')
+        hashtags = sections.get('hashtags', '')
+
+    # Làm sạch ký tự thừa xung quanh prompt, voiceover, caption, hashtags
     prompt = re.sub(r'^\*+|\*+$', '', prompt).strip()
     prompt = prompt.strip('"').strip("'").strip()
     
@@ -54,11 +56,13 @@ def parse_prompt_response(text: str) -> dict[str, str]:
         prompt = re.sub(r'Scene\s*\d+:[^\n]*', '', prompt, flags=re.IGNORECASE).strip()
         prompt = re.sub(r'\n+', ' ', prompt).strip()
 
+    voiceover = re.sub(r'^\*+|\*+$', '', voiceover).strip()
     caption = re.sub(r'^\*+|\*+$', '', caption).strip()
     hashtags = re.sub(r'^\*+|\*+$', '', hashtags).strip()
 
     return {
         "prompt": prompt,
+        "voiceover": voiceover,
         "caption": caption,
         "hashtags": hashtags
     }
