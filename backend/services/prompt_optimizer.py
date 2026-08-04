@@ -83,6 +83,12 @@ def parse_prompt_response(text: str) -> dict[str, str]:
         if words:
             voiceover = ' '.join(words[:30])
 
+    # Giới hạn chỉ lấy tối đa đúng 5 hashtags
+    if hashtags:
+        found_tags = re.findall(r'#\w+', hashtags)
+        if found_tags:
+            hashtags = ' '.join(found_tags[:5])
+
     return {
         "prompt": prompt,
         "voiceover": voiceover,

@@ -35,7 +35,7 @@ DEFAULT_SYSTEM_INSTRUCTION = (
     "CAPTION:\n"
     "[Bài đăng bán hàng ngắn bằng Tiếng Việt khoảng 30-50 từ giật gân, cuốn hút]\n\n"
     "HASHTAGS:\n"
-    "[5-8 hashtags hot xu hướng]"
+    "[Đúng 5 hashtags hot xu hướng]"
 )
 
 # Meta-Prompt mặc định gửi trực tiếp lên Gemini Web (Khi không dùng API Key)
@@ -57,8 +57,7 @@ DEFAULT_META_PROMPT_TEMPLATE = (
     "CAPTION:\n"
     "[Bài đăng bán hàng ngắn bằng Tiếng Việt khoảng 30-50 từ giật gân, cuốn hút]\n\n"
     "HASHTAGS:\n"
-    "[5-8 hashtags hot xu hướng]\n\n"
+    "[Đúng 5 hashtags hot xu hướng]\n\n"
     "---\n"
     "MÔ TẢ SẢN PHẨM CỦA TÔI: {description}"
 )
-
