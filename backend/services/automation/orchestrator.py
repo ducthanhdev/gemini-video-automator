@@ -361,21 +361,7 @@ class AutomationManager:
                 if not success or not final_output_path.exists():
                     raise Exception("Lỗi khi ghép nối các đoạn video ngắn thành video tổng hợp.")
 
-            if getattr(self, "enable_voiceover", True):
-                voiceover_text = task.get("voiceover", "")
-                if voiceover_text and voiceover_text.strip():
-                    self.update_task(task, status="generating AI voiceover audio", progress=93)
-                    logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {getattr(self, 'voice_gender', 'hoaimy')})...")
-                    voice_key = getattr(self, "voice_gender", "hoaimy")
-                    voice_success = await process_video_voiceover(final_output_path, voiceover_text, voice_key=voice_key)
-                    if voice_success:
-                        logger.info("⚡ Tự động lồng tiếng AI và ghép âm thanh thành công!")
-                    else:
-                        logger.warning("Lồng tiếng AI không thành công, giữ nguyên video gốc.")
-
-            meta_json_path = OUTPUT_DIR / f"video_{task['id']}.json"
-            meta_txt_path = OUTPUT_DIR / f"video_{task['id']}.txt"
-            
+            # 1. Giải mã và chuẩn hóa các thông tin metadata (caption, hashtags, voiceover, prompt)
             caption_val = task.get("caption", "")
             hashtags_val = task.get("hashtags", "")
             prompt_val = task.get("optimized_prompt", "")
@@ -383,19 +369,46 @@ class AutomationManager:
             
             if not caption_val or not hashtags_val or not voiceover_val:
                 fallback_parsed = parse_prompt_response(prompt_val)
-                if fallback_parsed.get("caption"):
+                if not caption_val and fallback_parsed.get("caption"):
                     caption_val = fallback_parsed["caption"]
                     task["caption"] = caption_val
-                if fallback_parsed.get("hashtags"):
+                if not hashtags_val and fallback_parsed.get("hashtags"):
                     hashtags_val = fallback_parsed["hashtags"]
                     task["hashtags"] = hashtags_val
-                if fallback_parsed.get("voiceover"):
+                if not voiceover_val and fallback_parsed.get("voiceover"):
                     voiceover_val = fallback_parsed["voiceover"]
                     task["voiceover"] = voiceover_val
-                if fallback_parsed.get("prompt"):
+                if not prompt_val and fallback_parsed.get("prompt"):
                     prompt_val = fallback_parsed["prompt"]
                     task["optimized_prompt"] = prompt_val
-            
+
+            # Nếu voiceover_val vẫn trống, tự động tạo kịch bản từ caption hoặc mô tả sản phẩm của người dùng
+            if not voiceover_val or not voiceover_val.strip():
+                src_text = caption_val if caption_val else task.get("user_description", "")
+                clean_src = re.sub(r'#\w+', '', src_text).strip()
+                clean_src = re.sub(r'PROMPT:|CAPTION:|HASHTAGS:|VOICEOVER:', '', clean_src, flags=re.IGNORECASE).strip()
+                words = clean_src.split()
+                if words:
+                    voiceover_val = ' '.join(words[:30])
+                    task["voiceover"] = voiceover_val
+
+            # 2. Tự động lồng tiếng AI (EdgeTTS) và ghép âm thanh vào file video MP4
+            if getattr(self, "enable_voiceover", True):
+                if voiceover_val and voiceover_val.strip():
+                    self.update_task(task, status="generating AI voiceover audio", progress=93)
+                    logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {getattr(self, 'voice_gender', 'hoaimy')})... Text: '{voiceover_val[:50]}...'")
+                    voice_key = getattr(self, "voice_gender", "hoaimy")
+                    voice_success = await process_video_voiceover(final_output_path, voiceover_val, voice_key=voice_key)
+                    if voice_success:
+                        logger.info("⚡ Tự động lồng tiếng AI và ghép âm thanh thành công!")
+                    else:
+                        logger.warning("Lồng tiếng AI không thành công, giữ nguyên video gốc.")
+                else:
+                    logger.warning("Không có nội dung Kịch bản lồng tiếng để sinh âm thanh.")
+
+            meta_json_path = OUTPUT_DIR / f"video_{task['id']}.json"
+            meta_txt_path = OUTPUT_DIR / f"video_{task['id']}.txt"
+
             meta_data = {
                 "video_filename": output_filename,
                 "prompt": prompt_val,
