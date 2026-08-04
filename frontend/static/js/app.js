@@ -501,6 +501,8 @@ function updateQueueList(queue, currentTaskId) {
                     <span class="task-status ${task.status}">${task.status.toUpperCase()}</span>
                 </div>
                 <div class="task-desc">${task.user_description}</div>
+                ${task.optimized_prompt ? `<div class="task-prompt-box" style="margin-top:6px; font-size:0.8rem; color:#94a3b8; background:rgba(15,23,42,0.6); padding:6px 10px; border-radius:6px; border-left:3px solid #6366f1;"><strong>🎬 Visual Prompt:</strong> ${task.optimized_prompt}</div>` : ''}
+                ${task.voiceover ? `<div class="task-voiceover-box" style="margin-top:6px; font-size:0.8rem; color:#a7f3d0; background:rgba(16,185,129,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #10b981;"><strong>🎙️ Kịch bản lồng tiếng:</strong> ${task.voiceover}</div>` : ''}
                 <div class="progress-container">
                     <div class="progress-bar" style="width: ${progressPercent}%"></div>
                 </div>
