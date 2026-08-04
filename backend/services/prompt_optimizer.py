@@ -88,7 +88,7 @@ def parse_prompt_response(text: str) -> dict[str, str]:
         clean_vo = re.sub(r'^(VOICEOVER|KỊCH BẢN LỒNG TIẾNG|LỒNG TIẾNG)\s*:?\s*', '', voiceover.strip(), flags=re.IGNORECASE).strip()
         clean_vo = re.sub(r'#\w+', '', clean_vo).strip()
         if clean_vo:
-            prompt = f"{prompt.rstrip('.')} Đồng thời có âm thanh giọng đọc thuyết minh lồng tiếng Tiếng Việt phát âm trực tiếp giới thiệu: '{clean_vo}'."
+            prompt = f"{prompt.rstrip('.')} Đi kèm âm thanh giọng đọc thuyết minh lồng tiếng Tiếng Việt truyền cảm, âm sắc ấm áp, giàu cảm xúc và cực kỳ lôi cuốn như voiceover quảng cáo TVC chuyên nghiệp đọc lời giới thiệu sản phẩm: '{clean_vo}'."
 
     # Giới hạn chỉ lấy tối đa đúng 5 hashtags
     if hashtags:
