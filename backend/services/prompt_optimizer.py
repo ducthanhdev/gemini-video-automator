@@ -74,6 +74,15 @@ def parse_prompt_response(text: str) -> dict[str, str]:
     for pattern, replacement in sensitive_replacements:
         prompt = re.sub(pattern, replacement, prompt, flags=re.IGNORECASE)
 
+    # Nếu chưa có Voiceover, tự động trích xuất đoạn kịch bản ngắn (20-30 từ) từ Caption làm giọng đọc lồng tiếng
+    if not voiceover:
+        target_src = caption if caption else text
+        clean_src = re.sub(r'#\w+', '', target_src).strip()
+        clean_src = re.sub(r'PROMPT:|CAPTION:|HASHTAGS:|VOICEOVER:', '', clean_src, flags=re.IGNORECASE).strip()
+        words = clean_src.split()
+        if words:
+            voiceover = ' '.join(words[:30])
+
     return {
         "prompt": prompt,
         "voiceover": voiceover,

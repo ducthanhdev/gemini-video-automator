@@ -472,6 +472,7 @@ class GeminiBot:
             update_task_fn(
                 task,
                 optimized_prompt=optimized_prompt,
+                voiceover=parsed_dict.get("voiceover", ""),
                 caption=parsed_dict.get("caption", ""),
                 hashtags=parsed_dict.get("hashtags", "")
             )
