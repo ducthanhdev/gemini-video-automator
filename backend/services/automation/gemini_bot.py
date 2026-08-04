@@ -599,8 +599,17 @@ class GeminiBot:
         if not await prompt_input.is_visible():
             raise Exception("Không tìm thấy ô nhập mô tả video trên giao diện.")
             
+        import re
+        prompt_to_fill = prompt
+        voiceover_text = task.get("voiceover", "")
+        if voiceover_text and voiceover_text.strip() and "giọng đọc" not in prompt.lower() and "lồng tiếng" not in prompt.lower():
+            clean_vo = re.sub(r'^(VOICEOVER|KỊCH BẢN LỒNG TIẾNG|LỒNG TIẾNG)\s*:?\s*', '', voiceover_text.strip(), flags=re.IGNORECASE).strip()
+            clean_vo = re.sub(r'#\w+', '', clean_vo).strip()
+            if clean_vo:
+                prompt_to_fill += f". Đồng thời có âm thanh giọng đọc thuyết minh lồng tiếng Tiếng Việt phát âm trực tiếp giới thiệu: '{clean_vo}'."
+
         await prompt_input.focus()
-        await prompt_input.fill(prompt)
+        await prompt_input.fill(prompt_to_fill)
         await asyncio.sleep(1)
         
         await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90, image_paths=image_paths)
