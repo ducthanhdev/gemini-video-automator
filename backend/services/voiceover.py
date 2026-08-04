@@ -56,26 +56,47 @@ async def merge_audio_with_video(video_path: Path, audio_path: Path, output_vide
         output_video_path.parent.mkdir(parents=True, exist_ok=True)
         temp_output = output_video_path.with_name(f"temp_merged_{output_video_path.name}")
 
-        # Lệnh FFmpeg: Ép dùng luồng video từ file 0 (0:v:0) và luồng audio giọng đọc từ file 1 (1:a:0)
-        cmd = [
+        # Thử trộn nhạc nền của video gốc [0:a] với giọng đọc AI [1:a]
+        cmd_mix = [
             "ffmpeg", "-y",
             "-i", str(video_path.resolve()),
             "-i", str(audio_path.resolve()),
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
             "-map", "0:v:0",
-            "-map", "1:a:0",
+            "-map", "[aout]",
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
             str(temp_output.resolve())
         ]
 
-        logger.info("Đang tiến hành ghép âm thanh lồng tiếng vào video bằng FFmpeg...")
+        logger.info("Đang tiến hành ghép/trộn âm thanh lồng tiếng và nhạc nền vào video bằng FFmpeg...")
         process = await asyncio.create_subprocess_exec(
-            *cmd,
+            *cmd_mix,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            # Nếu video gốc không chứa luồng âm thanh [0:a], dùng fallback gán trực tiếp luồng audio giọng đọc [1:a:0]
+            cmd_fallback = [
+                "ffmpeg", "-y",
+                "-i", str(video_path.resolve()),
+                "-i", str(audio_path.resolve()),
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                str(temp_output.resolve())
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd_fallback,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
 
         if process.returncode == 0 and temp_output.exists() and temp_output.stat().st_size > 0:
             # Thay thế file cũ bằng file đã ghép âm thanh
