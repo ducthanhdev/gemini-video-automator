@@ -20,7 +20,9 @@ async def generate_voiceover(text: str, output_audio_path: Path, voice_key: str 
             return False
 
         voice_name = VOICE_MAPPING.get(voice_key.lower(), "vi-VN-HoaiMyNeural")
-        clean_text = text.strip()
+        import re
+        clean_text = re.sub(r'^(VOICEOVER|KỊCH BẢN LỒNG TIẾNG|LỒNG TIẾNG)\s*:?\s*', '', text.strip(), flags=re.IGNORECASE).strip()
+        clean_text = re.sub(r'#\w+', '', clean_text).strip()
         
         logger.info(f"Đang sinh giọng đọc AI ({voice_name}) cho văn bản: '{clean_text[:40]}...'")
         
@@ -54,18 +56,16 @@ async def merge_audio_with_video(video_path: Path, audio_path: Path, output_vide
         output_video_path.parent.mkdir(parents=True, exist_ok=True)
         temp_output = output_video_path.with_name(f"temp_merged_{output_video_path.name}")
 
-        # Lệnh FFmpeg: Kết hợp video và audio, tự động căn chỉnh thời lượng
-        # -c:v copy : Giữ nguyên định dạng video (không mã hóa lại, cực nhanh)
-        # -c:a aac : Mã hóa audio chuẩn AAC
-        # -shortest : Căn theo file có thời lượng ngắn hơn hoặc giữ vừa vặn
+        # Lệnh FFmpeg: Ép dùng luồng video từ file 0 (0:v:0) và luồng audio giọng đọc từ file 1 (1:a:0)
         cmd = [
             "ffmpeg", "-y",
             "-i", str(video_path.resolve()),
             "-i", str(audio_path.resolve()),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
             str(temp_output.resolve())
         ]
 
