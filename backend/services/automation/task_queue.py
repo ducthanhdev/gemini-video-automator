@@ -41,7 +41,7 @@ class TaskQueueManager:
                 self.system_instruction = data.get("system_instruction") or DEFAULT_SYSTEM_INSTRUCTION
                 self.meta_prompt_template = data.get("meta_prompt_template") or DEFAULT_META_PROMPT_TEMPLATE
                 self.voice_gender = data.get("voice_gender", "hoaimy")
-                self.enable_voiceover = data.get("enable_voiceover", True)
+                self.enable_voiceover = data.get("enable_voiceover", False)
                 logger.info("Đã tải cấu hình cài đặt từ file settings.json.")
             else:
                 self._save_settings()
