@@ -61,7 +61,7 @@ async def merge_audio_with_video(video_path: Path, audio_path: Path, output_vide
             "ffmpeg", "-y",
             "-i", str(video_path.resolve()),
             "-i", str(audio_path.resolve()),
-            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+            "-filter_complex", "[0:a]volume=1.0[bg];[1:a]volume=0.65[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]",
             "-map", "0:v:0",
             "-map", "[aout]",
             "-c:v", "copy",

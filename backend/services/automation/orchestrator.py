@@ -12,7 +12,7 @@ from typing import Any
 
 from backend.config import UPLOAD_DIR, OUTPUT_DIR, CLIP_DURATION
 from backend.services import video_processor
-from backend.services.prompt_optimizer import optimize_prompt, parse_prompt_response
+from backend.services.prompt_optimizer import optimize_prompt, parse_prompt_response, ensure_caption_and_hashtags
 from backend.services.voiceover import process_video_voiceover
 
 from backend.services.automation.task_queue import TaskQueueManager
@@ -126,11 +126,12 @@ class AutomationManager:
     async def _upload_image_in_video_mode(self, image_paths: list[Path]):
         return await self.bot._upload_image_in_video_mode(image_paths)
 
-    async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any], cycle: int = 0, num_cycles: int = 1):
+    async def _automate_browser_for_clip(self, image_paths: list[Path], prompt: str, output_path: Path, task: dict[str, Any], cycle: int = 0, num_cycles: int = 1, api_error: bool = False):
         settings_dict = {
             "api_key": self.api_key,
             "prompt_mode": self.prompt_mode,
-            "meta_prompt_template": self.meta_prompt_template
+            "meta_prompt_template": self.meta_prompt_template,
+            "api_error": api_error
         }
         return await self.bot._automate_browser_for_clip(
             image_paths, prompt, output_path, task,
@@ -287,11 +288,13 @@ class AutomationManager:
             self.system_instruction,
             self.meta_prompt_template
         )
+        api_error = False
         if isinstance(opt_res, dict):
             optimized = opt_res.get("prompt", "")
             voiceover = opt_res.get("voiceover", "")
             caption = opt_res.get("caption", "")
             hashtags = opt_res.get("hashtags", "")
+            api_error = opt_res.get("api_error", False)
         else:
             optimized = str(opt_res)
             voiceover = ""
@@ -338,7 +341,10 @@ class AutomationManager:
                         "Maintain the style, details, camera movement direction, and lighting from the image."
                     )
                 
-                await self._automate_browser_for_clip(cycle_images, prompt_to_send, clip_path, task, cycle=cycle, num_cycles=num_cycles)
+                await self._automate_browser_for_clip(
+                    cycle_images, prompt_to_send, clip_path, task,
+                    cycle=cycle, num_cycles=num_cycles, api_error=api_error
+                )
                 generated_clips.append(clip_path)
 
             self.update_task(task, status="stitching videos", progress=88)
@@ -361,36 +367,23 @@ class AutomationManager:
                 if not success or not final_output_path.exists():
                     raise Exception("Lỗi khi ghép nối các đoạn video ngắn thành video tổng hợp.")
 
-            # 1. Giải mã và chuẩn hóa các thông tin metadata (caption, hashtags, voiceover, prompt)
-            caption_val = task.get("caption", "")
-            hashtags_val = task.get("hashtags", "")
-            prompt_val = task.get("optimized_prompt", "")
-            voiceover_val = task.get("voiceover", "")
-            
-            if not caption_val or not hashtags_val or not voiceover_val:
-                fallback_parsed = parse_prompt_response(prompt_val)
-                if not caption_val and fallback_parsed.get("caption"):
-                    caption_val = fallback_parsed["caption"]
-                    task["caption"] = caption_val
-                if not hashtags_val and fallback_parsed.get("hashtags"):
-                    hashtags_val = fallback_parsed["hashtags"]
-                    task["hashtags"] = hashtags_val
-                if not voiceover_val and fallback_parsed.get("voiceover"):
-                    voiceover_val = fallback_parsed["voiceover"]
-                    task["voiceover"] = voiceover_val
-                if not prompt_val and fallback_parsed.get("prompt"):
-                    prompt_val = fallback_parsed["prompt"]
-                    task["optimized_prompt"] = prompt_val
+            # 1. Đảm bảo toàn vẹn thông tin metadata (caption, hashtags, voiceover, prompt)
+            ensured_meta = ensure_caption_and_hashtags({
+                "prompt": task.get("optimized_prompt", ""),
+                "voiceover": task.get("voiceover", ""),
+                "caption": task.get("caption", ""),
+                "hashtags": task.get("hashtags", "")
+            }, task.get("user_description", ""))
 
-            # Nếu voiceover_val vẫn trống, tự động tạo kịch bản từ caption hoặc mô tả sản phẩm của người dùng
-            if not voiceover_val or not voiceover_val.strip():
-                src_text = caption_val if caption_val else task.get("user_description", "")
-                clean_src = re.sub(r'#\w+', '', src_text).strip()
-                clean_src = re.sub(r'PROMPT:|CAPTION:|HASHTAGS:|VOICEOVER:', '', clean_src, flags=re.IGNORECASE).strip()
-                words = clean_src.split()
-                if words:
-                    voiceover_val = ' '.join(words[:30])
-                    task["voiceover"] = voiceover_val
+            prompt_val = ensured_meta["prompt"]
+            voiceover_val = ensured_meta["voiceover"]
+            caption_val = ensured_meta["caption"]
+            hashtags_val = ensured_meta["hashtags"]
+
+            task["caption"] = caption_val
+            task["hashtags"] = hashtags_val
+            task["voiceover"] = voiceover_val
+            task["optimized_prompt"] = prompt_val
 
             # 2. Tự động lồng tiếng AI (EdgeTTS) và ghép âm thanh vào file video MP4
             if getattr(self, "enable_voiceover", True):
@@ -425,7 +418,16 @@ class AutomationManager:
             with open(meta_txt_path, "w", encoding="utf-8") as f:
                 f.write(txt_content)
 
-            self.update_task(task, status="completed", progress=100, output_video=output_filename)
+            self.update_task(
+                task,
+                status="completed",
+                progress=100,
+                output_video=output_filename,
+                caption=caption_val,
+                hashtags=hashtags_val,
+                voiceover=voiceover_val,
+                optimized_prompt=prompt_val
+            )
             logger.info(f"Đã hoàn thành nhiệm vụ {task['id']}. Video kết quả: {final_output_path}")
 
         except Exception as e:

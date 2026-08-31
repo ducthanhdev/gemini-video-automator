@@ -6,6 +6,7 @@ import asyncio
 import base64
 import logging
 from pathlib import Path
+import re
 from typing import Any
 
 from backend.services.product_parser import ProductParser
@@ -429,14 +430,19 @@ class GeminiBot:
         prompt_mode = settings.get("prompt_mode", "api")
         meta_prompt_template = settings.get("meta_prompt_template", "")
 
-        is_meta_prompt = (not api_key or prompt_mode == "meta") and "Please continue" not in prompt
+        is_meta_prompt = (not api_key or prompt_mode == "meta" or settings.get("api_error", False)) and "Please continue" not in prompt
         if is_meta_prompt:
             logger.info("Chế độ Web UI: Đang tối ưu hóa prompt qua Chat Gemini trước...")
             update_task_fn(task, status="generating optimized prompt via chat")
             
             await self._upload_images_to_page(image_paths)
             
-            from backend.services.prompt_optimizer import _generate_meta_prompt, parse_prompt_response
+            from backend.services.prompt_optimizer import (
+                _generate_meta_prompt,
+                parse_prompt_response,
+                ensure_caption_and_hashtags,
+                generate_smart_caption_and_hashtags
+            )
             meta_prompt_to_send = _generate_meta_prompt(task["user_description"], len(image_paths) > 1, meta_prompt_template)
 
             chat_input = self.page.locator(TEXTBOX_SELECTOR).first
@@ -446,40 +452,84 @@ class GeminiBot:
             
             await self._wait_and_submit_prompt(chat_input, timeout_seconds=90, image_paths=image_paths)
             
-            logger.info("Đã gửi Meta-Prompt. Đang chờ Gemini sinh prompt tối ưu (chờ ít nhất 20 giây)...")
-            await asyncio.sleep(20)
+            logger.info("Đã gửi Meta-Prompt. Đang chờ Gemini sinh prompt tối ưu, caption và hashtags...")
+            await asyncio.sleep(15)
             
             last_text = ""
-            for _ in range(15):
-                try:
-                    text = await self.page.locator("message-content").last.inner_text()
-                    if len(text.strip()) > 0 and text == last_text:
-                        break
-                    last_text = text
-                except Exception:
-                    pass
-                await asyncio.sleep(1)
+            stable_count = 0
+            response_selectors = [
+                "message-content",
+                "model-response",
+                "div.model-response-text",
+                ".response-container",
+                ".markdown"
+            ]
+            
+            for _ in range(25):  # Chờ tối đa thêm 50 giây (25 x 2s)
+                current_text = ""
+                for sel in response_selectors:
+                    try:
+                        loc = self.page.locator(sel).last
+                        if await loc.is_visible(timeout=300):
+                            t = await loc.inner_text()
+                            if t and len(t.strip()) > len(current_text):
+                                current_text = t.strip()
+                    except Exception:
+                        pass
+                
+                if current_text:
+                    if current_text == last_text:
+                        stable_count += 1
+                        # Nếu text ổn định 2 lần liên tiếp và đã có độ dài hợp lý
+                        if stable_count >= 2 and len(current_text) > 80:
+                            break
+                    else:
+                        stable_count = 0
+                        last_text = current_text
+                
+                await asyncio.sleep(2)
             
             parsed_dict = parse_prompt_response(last_text)
-            optimized_prompt = parsed_dict.get("prompt", "").strip()
+            ensured_dict = ensure_caption_and_hashtags(parsed_dict, task.get("user_description", ""))
+            optimized_prompt = ensured_dict.get("prompt", "").strip()
             
-            if not optimized_prompt or "Engineer & Social Media Marketing" in optimized_prompt:
-                logger.warning("Không thể lấy prompt tối ưu sạch từ Chat. Dùng prompt fallback.")
-                optimized_prompt = f"A high-quality 4k promotional video of pet cat food product based on: {task['user_description']}"
+            if not optimized_prompt or "Engineer & Social Media Marketing" in optimized_prompt or "CHỈ TRẢ VỀ TEXT" in optimized_prompt:
+                logger.warning("Prompt tối ưu từ Chat chưa chuẩn. Tự động chuẩn hóa prompt...")
+                desc = task.get('user_description', 'sản phẩm chất lượng cao')
+                clean_desc = re.sub(r'https?://\S+', '', desc).strip()
+                clean_desc = clean_desc.split('\n')[0][:100]
+                optimized_prompt = f"Video quảng cáo điện ảnh 4K sinh động lột tả chi tiết sản phẩm {clean_desc}, ánh sáng thương mại chuyên nghiệp, góc quay cận cảnh mượt mà."
                 
             logger.info(f"Đã nhận prompt tối ưu từ Chat: {optimized_prompt}")
             prompt = optimized_prompt
+            
+            final_caption = ensured_dict.get("caption", "").strip()
+            final_hashtags = ensured_dict.get("hashtags", "").strip()
+            final_voiceover = ensured_dict.get("voiceover", "").strip()
+            
+            # CẬP NHẬT VÀ LƯU CHẮC CHẮN VÀO QUEUE TRƯỚC KHI CHUYỂN SANG BƯỚC TẠO VIDEO
             update_task_fn(
                 task,
                 optimized_prompt=optimized_prompt,
-                voiceover=parsed_dict.get("voiceover", ""),
-                caption=parsed_dict.get("caption", ""),
-                hashtags=parsed_dict.get("hashtags", "")
+                voiceover=final_voiceover,
+                caption=final_caption,
+                hashtags=final_hashtags
             )
+            logger.info(f"✅ ĐÃ XÁC THỰC VÀ LƯU CHẮC CHẮN CAPTION & HASHTAGS VÀO TASK: Caption='{final_caption[:50]}...', Hashtags='{final_hashtags}'")
             
             logger.info("Làm sạch khung chat và bắt đầu bước tạo video...")
             await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
             await asyncio.sleep(2)
+
+        # 🛑 CỔNG KIỂM TRA BẮT BUỘC TOÀN DIỆN: Đảm bảo 100% Task đã có Caption & Hashtags trước khi mở trang tạo video
+        if not task.get("caption") or not task.get("hashtags"):
+            logger.warning("Phát hiện task chưa có Caption/Hashtags trước khi tạo video. Tự động sinh bổ sung và lưu vào hàng đợi...")
+            from backend.services.prompt_optimizer import generate_smart_caption_and_hashtags
+            smart_fb = generate_smart_caption_and_hashtags(task.get("user_description", ""), prompt)
+            task_caption = task.get("caption") or smart_fb["caption"]
+            task_hashtags = task.get("hashtags") or smart_fb["hashtags"]
+            update_task_fn(task, caption=task_caption, hashtags=task_hashtags)
+            logger.info(f"✅ Đã bổ sung và lưu Caption/Hashtags thành công: {task_caption[:50]}... | {task_hashtags}")
 
         ratio_button = self.page.locator(RATIO_BUTTON_SELECTOR).locator("visible=true").first
 

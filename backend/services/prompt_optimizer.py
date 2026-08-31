@@ -9,6 +9,82 @@ from backend.config import DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPL
 
 logger = logging.getLogger(__name__)
 
+def generate_smart_caption_and_hashtags(user_description: str, prompt: str = "") -> dict[str, str]:
+    """Tự động sinh Caption bán hàng hấp dẫn và 5 Hashtags chuẩn xu hướng khi Gemini chưa sinh đủ."""
+    raw_desc = (user_description or "").strip()
+    clean_desc = re.sub(r'https?://\S+', '', raw_desc)
+    clean_desc = re.sub(r'[#\*\_\[\]]', '', clean_desc).strip()
+    
+    # Lấy câu ngắn gọn mô tả sản phẩm (dưới 150 ký tự)
+    first_line = clean_desc.split('\n')[0].strip() if clean_desc else ""
+    product_summary = first_line[:120] if first_line else "sản phẩm chất lượng cao"
+    
+    caption = (
+        f"🔥 Khám phá ngay {product_summary}! ✨\n"
+        f"Chất lượng vượt trội, thiết kế sang trọng và mang đến trải nghiệm tuyệt vời. "
+        f"Đừng bỏ lỡ cơ hội sở hữu ngay hôm nay với ưu đãi siêu hấp dẫn! 🛒👇"
+    )
+    
+    # Tạo 5 hashtags chuẩn xu hướng, linh hoạt theo tên sản phẩm nếu có
+    words = [re.sub(r'\W+', '', w).lower() for w in product_summary.split() if len(w) > 2]
+    tags = []
+    for w in words[:2]:
+        if len(w) >= 3 and w not in ["cua", "cho", "cac", "nhung", "duoc", "khong", "mang"]:
+            tags.append(f"#{w}")
+            
+    default_tags = ["#xuhuong", "#review", "#sanphamhot", "#muataitiktokshop", "#trending", "#fyp"]
+    for t in default_tags:
+        if t not in tags:
+            tags.append(t)
+        if len(tags) >= 5:
+            break
+            
+    hashtags = " ".join(tags[:5])
+    
+    return {
+        "caption": caption,
+        "hashtags": hashtags
+    }
+
+def ensure_caption_and_hashtags(data: dict[str, Any], user_description: str = "") -> dict[str, str]:
+    """Đảm bảo chắc chắn dữ liệu có đầy đủ prompt, voiceover, caption và hashtags không bao giờ bị rỗng."""
+    prompt = (data.get("prompt") or "").strip()
+    voiceover = (data.get("voiceover") or "").strip()
+    caption = (data.get("caption") or "").strip()
+    hashtags = (data.get("hashtags") or "").strip()
+    
+    # Nếu chưa có caption hoặc caption quá ngắn, tạo smart caption
+    if not caption or len(caption) < 15:
+        smart_data = generate_smart_caption_and_hashtags(user_description, prompt)
+        caption = smart_data["caption"]
+        if not hashtags or len(hashtags) < 5:
+            hashtags = smart_data["hashtags"]
+            
+    # Nếu hashtags vẫn trống hoặc không chứa dấu #, bổ sung 5 hashtags
+    if not hashtags or "#" not in hashtags:
+        smart_data = generate_smart_caption_and_hashtags(user_description, prompt)
+        hashtags = smart_data["hashtags"]
+    else:
+        # Chuẩn hóa chỉ lấy tối đa đúng 5 hashtags
+        found_tags = re.findall(r'#\w+', hashtags)
+        if found_tags:
+            hashtags = ' '.join(found_tags[:5])
+            
+    # Nếu voiceover còn trống, tự động trích xuất từ caption
+    if not voiceover:
+        clean_src = re.sub(r'#\w+', '', caption).strip()
+        clean_src = re.sub(r'PROMPT:|CAPTION:|HASHTAGS:|VOICEOVER:', '', clean_src, flags=re.IGNORECASE).strip()
+        words = clean_src.split()
+        if words:
+            voiceover = ' '.join(words[:30])
+            
+    return {
+        "prompt": prompt,
+        "voiceover": voiceover,
+        "caption": caption,
+        "hashtags": hashtags
+    }
+
 def parse_prompt_response(text: str) -> dict[str, str]:
     """Phân tách văn bản phản hồi từ Gemini thành các thành phần prompt, voiceover, caption và hashtags."""
     if not text:
@@ -16,11 +92,11 @@ def parse_prompt_response(text: str) -> dict[str, str]:
         
     text = text.strip()
     
-    # Tìm các vị trí thẻ nhãn PROMPT, VOICEOVER, CAPTION, HASHTAGS bằng regex
-    prompt_match = re.search(r'(?:\*\*|#|\d+\.\s*)?PROMPT(?:\s*VIDEO)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
-    voiceover_match = re.search(r'(?:\*\*|#|\d+\.\s*)?VOICEOVER(?:\s*LỒNG\s*TIẾNG)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
-    caption_match = re.search(r'(?:\*\*|#|\d+\.\s*)?CAPTION(?:\s*BÀI\s*ĐĂNG)?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
-    hashtags_match = re.search(r'(?:\*\*|#|\d+\.\s*)?HASHTAGS?(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    # Tìm các vị trí thẻ nhãn PROMPT, VOICEOVER, CAPTION, HASHTAGS bằng regex mở rộng
+    prompt_match = re.search(r'(?:\*\*|#|\d+\.\s*)?(?:PROMPT(?:\s*VIDEO)?|CÂU\s*LỆNH|PROMPT)(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    voiceover_match = re.search(r'(?:\*\*|#|\d+\.\s*)?(?:VOICEOVER|KỊCH\s*BẢN\s*LỒNG\s*TIẾNG|LỒNG\s*TIẾNG|THUYẾT\s*MINH|VOICE\s*OVER)(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    caption_match = re.search(r'(?:\*\*|#|\d+\.\s*)?(?:CAPTION(?:\s*BÀI\s*ĐĂNG)?|BÀI\s*ĐĂNG|NỘI\s*DUNG\s*BÀI\s*VIẾT|BÀI\s*VIẾT|TIÊU\s*ĐỀ\s*BÀI\s*ĐĂNG)(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
+    hashtags_match = re.search(r'(?:\*\*|#|\d+\.\s*)?(?:HASHTAGS?|THẺ\s*HASHTAGS?|THẺ\s*TAGS?|TAGS?)(?:\s*\(.*?\))?(?:\*\*|:|\s)*\n?', text, re.IGNORECASE)
 
     prompt = text
     voiceover = ""
@@ -130,7 +206,8 @@ def optimize_prompt(
             if not pil_images:
                 logger.warning("Không tìm thấy tệp ảnh nào hợp lệ để gửi cho API. Chuyển sang Meta-Prompt.")
                 meta_str = _generate_meta_prompt(user_description, len(image_paths) > 1, meta_template)
-                return parse_prompt_response(meta_str)
+                res = parse_prompt_response(meta_str)
+                return ensure_caption_and_hashtags(res, user_description)
 
             contents: list[Any] = []
             contents.extend(pil_images)
@@ -151,13 +228,14 @@ def optimize_prompt(
                 raise Exception("Không nhận được phản hồi từ Gemini.")
                 
             res_dict = parse_prompt_response(text)
-            logger.info(f"Đã tối ưu hóa prompt thành công: {res_dict['prompt'][:60]}...")
+            res_dict = ensure_caption_and_hashtags(res_dict, user_description)
+            logger.info(f"Đã tối ưu hóa prompt thành công qua API: {res_dict['prompt'][:60]}...")
             return res_dict
             
         except Exception as e:
             logger.error(f"Lỗi khi gọi API Gemini Developer: {e}. Tự động fallback sang Meta-Prompt.")
             meta_str = _generate_meta_prompt(user_description, len(image_paths) > 1, meta_template)
-            return {"prompt": meta_str, "caption": "", "hashtags": "", "is_meta": True}
+            return {"prompt": meta_str, "caption": "", "hashtags": "", "is_meta": True, "api_error": True}
     else:
         logger.info("Không có API Key. Sử dụng Meta-Prompt trực tiếp cho Web UI.")
         meta_str = _generate_meta_prompt(user_description, len(image_paths) > 1, meta_template)

@@ -917,14 +917,22 @@ function initLayoutResizer() {
 
 // 12. CÁC HÀM QUẢN LÝ NHIỆM VỤ (SỬA, XÓA, CHẠY LẠI, COPY CAPTION)
 window.copyTaskCaption = (taskId) => {
-    const task = latestQueueList.find(t => t.id === taskId);
-    if (!task || (!task.caption && !task.hashtags)) {
-        showToast("Chưa có nội dung Caption cho nhiệm vụ này.", true);
+    const task = (typeof latestQueueList !== "undefined" && Array.isArray(latestQueueList))
+        ? latestQueueList.find(t => t.id === taskId)
+        : null;
+    if (!task) return;
+    
+    const caption = (task.caption || "").trim();
+    const hashtags = (task.hashtags || "").trim();
+    
+    if (!caption && !hashtags) {
+        showToast("Nhiệm vụ này chưa có Caption/Hashtags.", true);
         return;
     }
-    const fullCopy = `${task.caption || ''}\n\n${task.hashtags || ''}`.trim();
-    navigator.clipboard.writeText(fullCopy).then(() => {
-        showToast("📋 Đã sao chép Bài đăng & Hashtags vào bộ nhớ tạm!");
+    
+    const fullCopy = `${caption}\n\n${hashtags}`.trim();
+    copyTextToClipboard(fullCopy).then(() => {
+        showToast("📋 Đã sao chép Bài đăng (Caption & Hashtags)!");
     }).catch(() => {
         showToast("Không thể tự động sao chép.", true);
     });
@@ -1044,23 +1052,6 @@ window.copyErrorToClipboard = async (taskId) => {
         showToast("📋 Đã copy mã lỗi!");
     }).catch(() => {
         showToast("Không thể copy tự động!", "error");
-    });
-};
-
-window.copyTaskCaption = function(taskId) {
-    const task = latestQueueList.find(t => t.id === taskId);
-    if (!task) return;
-    const caption = task.caption || "";
-    const hashtags = task.hashtags || "";
-    if (!caption && !hashtags) {
-        showToast("Nhiệm vụ này chưa có Caption/Hashtag.", true);
-        return;
-    }
-    const fullText = `${caption}\n\n${hashtags}`.trim();
-    copyTextToClipboard(fullText).then(() => {
-        showToast("📋 Đã sao chép Bài đăng & Hashtags!");
-    }).catch(err => {
-        showToast("Không thể tự động sao chép.", true);
     });
 };
 

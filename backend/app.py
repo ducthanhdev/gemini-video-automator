@@ -230,21 +230,60 @@ async def switch_account():
 @app.get("/api/videos")
 async def list_videos():
     """Liệt kê danh sách các video kết quả đã hoàn thành đính kèm thông tin Caption/Hashtags."""
+    from backend.services.prompt_optimizer import ensure_caption_and_hashtags, parse_prompt_response, generate_smart_caption_and_hashtags
     videos = []
     try:
         for p in OUTPUT_DIR.glob("*.mp4"):
             stat = p.stat()
             json_path = OUTPUT_DIR / f"{p.stem}.json"
+            txt_path = OUTPUT_DIR / f"{p.stem}.txt"
+            
             caption = ""
             hashtags = ""
             prompt = ""
+            voiceover = ""
+            meta_data = {}
+            
             if json_path.exists():
                 try:
                     with open(json_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                        caption = meta.get("caption", "")
-                        hashtags = meta.get("hashtags", "")
-                        prompt = meta.get("prompt", "")
+                        meta_data = json.load(f)
+                        caption = meta_data.get("caption", "")
+                        hashtags = meta_data.get("hashtags", "")
+                        prompt = meta_data.get("prompt", "")
+                        voiceover = meta_data.get("voiceover", "")
+                except Exception:
+                    pass
+
+            # Nếu chưa có caption trong file json, thử trích xuất từ file txt đi kèm
+            if (not caption or not hashtags) and txt_path.exists():
+                try:
+                    txt_content = txt_path.read_text(encoding="utf-8")
+                    parsed_txt = parse_prompt_response(txt_content)
+                    if not caption and parsed_txt.get("caption"):
+                        caption = parsed_txt["caption"]
+                    if not hashtags and parsed_txt.get("hashtags"):
+                        hashtags = parsed_txt["hashtags"]
+                    if not prompt and parsed_txt.get("prompt"):
+                        prompt = parsed_txt["prompt"]
+                except Exception:
+                    pass
+
+            # Nếu vẫn còn thiếu Caption hoặc Hashtags, tự động tạo smart fallback
+            if not caption or not hashtags:
+                smart_fb = generate_smart_caption_and_hashtags(prompt or p.stem, prompt)
+                caption = caption or smart_fb["caption"]
+                hashtags = hashtags or smart_fb["hashtags"]
+                
+                # Lưu cập nhật lại file json để lần sau tải nhanh
+                try:
+                    meta_data["video_filename"] = p.name
+                    meta_data["caption"] = caption
+                    meta_data["hashtags"] = hashtags
+                    meta_data["prompt"] = prompt
+                    meta_data["voiceover"] = voiceover
+                    with open(json_path, "w", encoding="utf-8") as f:
+                        json.dump(meta_data, f, ensure_ascii=False, indent=2)
                 except Exception:
                     pass
 
