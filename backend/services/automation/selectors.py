@@ -56,6 +56,8 @@ IMAGE_BUTTON_SELECTORS = [
 ]
 
 CREATE_VIDEO_BUTTON_SELECTORS = [
+    "[data-test-id='videos-side-nav-entry-button']",
+    "gem-nav-list-item:has-text('Video')",
     "toolbox-drawer-item:has-text('Tạo video')",
     "toolbox-drawer-item:has-text('Create video')",
     "toolbox-drawer-item:has-text('Veo')",
@@ -106,17 +108,37 @@ RATIO_16_9_SELECTORS = [
 
 PROMPT_INPUT_SELECTOR = (
     "div[role='textbox'][data-placeholder*='video' i], "
+    "div[role='textbox'][data-placeholder*='Mô tả video' i], "
     ".ql-editor[data-placeholder*='video' i], "
-    "div[role='textbox'][aria-label*='Gemini' i]"
+    "div[role='textbox'][aria-label*='Gemini' i], "
+    "div[role='textbox'][aria-label*='Nhập câu lệnh' i], "
+    "div[role='textbox']"
 )
 
 SEND_BUTTON_SELECTORS = (
-    "button[aria-label*='Send' i], button[aria-label*='Gửi' i], button[aria-label*='submit' i], "
-    "button[aria-label*='tạo' i], button[aria-label*='create' i], button[aria-label*='generate' i], "
-    "button[mattooltip*='Send' i], button[mattooltip*='Gửi' i], button.send-button, "
-    ".send-button-container button, button:has(mat-icon[data-mat-icon-name='send']), "
-    "button:has(mat-icon:has-text('send')), button:has-text('Gửi'), button:has-text('Send'), "
-    "button:has-text('Tạo video'), button:has-text('Create video'), button:has-text('Tạo'), button:has-text('Create')"
+    ".send-button-container button, "
+    "button[type='submit']:has(mat-icon[data-mat-icon-name='arrow_upward']), "
+    "button[type='submit']:has(mat-icon[fonticon='arrow_upward']), "
+    "button:has(mat-icon[data-mat-icon-name='arrow_upward']), "
+    "button:has(mat-icon[fonticon='arrow_upward']), "
+    "button[aria-label*='Gửi tin nhắn' i], "
+    "button[aria-label*='Send message' i], "
+    "button[aria-label*='Gửi câu lệnh' i], "
+    "button[aria-label*='Gửi lời nhắc' i], "
+    "button[aria-label*='Gửi yêu cầu' i], "
+    "button[aria-label*='Gửi truy vấn' i], "
+    "button[aria-label*='Send prompt' i], "
+    "button[aria-label='Gửi' i], "
+    "button[aria-label='Send' i], "
+    "button[aria-label*='Gửi' i], "
+    "button[aria-label*='Send' i], "
+    "button:has(mat-icon[data-mat-icon-name='send']), "
+    "button:has(mat-icon[fonticon='send']), "
+    "button:has(mat-icon:has-text('arrow_upward')), "
+    "button:has(mat-icon:has-text('send')), "
+    "button.send-button, "
+    "button[mattooltip*='Gửi' i], "
+    "button[mattooltip*='Send' i]"
 )
 
 PROGRESS_BAR_SELECTORS = [

@@ -360,11 +360,33 @@ class GeminiBot:
                 except Exception:
                     pass
 
-            send_btn = self.page.locator(SEND_BUTTON_SELECTORS).locator("visible=true").first
+            # Ưu tiên tìm nút Send bên trong khu vực khung nhập liệu trước để tránh nhầm các nút bên ngoài
+            send_btn = None
+            for container_sel in [
+                ".send-button-container",
+                "fieldset.input-area-container",
+                "input-area-v2",
+                ".input-area",
+                ".text-input-field",
+                "chat-window"
+            ]:
+                try:
+                    container = self.page.locator(container_sel).locator("visible=true").first
+                    if await container.is_visible(timeout=50):
+                        candidate = container.locator(SEND_BUTTON_SELECTORS).locator("visible=true").first
+                        if await candidate.is_visible(timeout=50):
+                            send_btn = candidate
+                            break
+                except Exception:
+                    pass
+
+            if not send_btn:
+                send_btn = self.page.locator(SEND_BUTTON_SELECTORS).locator("visible=true").first
+
             btn_active = False
 
             try:
-                if await send_btn.is_visible(timeout=100):
+                if send_btn and await send_btn.is_visible(timeout=100):
                     aria_disabled = await send_btn.get_attribute("aria-disabled")
                     disabled_attr = await send_btn.get_attribute("disabled")
                     if aria_disabled != "true" and disabled_attr is None and await send_btn.is_enabled():
@@ -373,17 +395,33 @@ class GeminiBot:
                 pass
 
             if has_image and not is_uploading and btn_active:
-                logger.info(f"🚀 THỎA MÃN ĐỦ 3 ĐIỀU KIỆN (Đã có ảnh + Hết upload + Nút Enter ACTIVE sau {check * 0.2:.1f}s)! Kích hoạt Enter/Gửi tạo video...")
+                logger.info(f"🚀 THỎA MÃN ĐỦ 3 ĐIỀU KIỆN (Đã có ảnh + Hết upload + Nút Send ACTIVE sau {check * 0.2:.1f}s)! Kích hoạt gửi tạo video...")
+                submitted = False
                 try:
                     await send_btn.click(force=True)
-                    await asyncio.sleep(0.5)
-                    return True
+                    logger.info("Đã click nút Send (Gửi tin nhắn).")
+                    submitted = True
+                    await asyncio.sleep(1.5)
                 except Exception as e:
-                    logger.warning(f"Click nút Send bị gián đoạn ({e}), thử bấm phím Enter...")
-                    await input_element.focus()
-                    await input_element.press("Enter")
-                    await asyncio.sleep(0.5)
-                    return True
+                    logger.warning(f"Click nút Send bị gián đoạn ({e}), chuyển sang bấm phím Enter...")
+
+                # Kiểm tra lại: nếu nút send vẫn hiển thị và active sau khi click, nhấn phím Enter trên ô nhập để chắc chắn submit thành công
+                try:
+                    btn_still_active = False
+                    if send_btn and await send_btn.is_visible(timeout=500):
+                        aria_dis = await send_btn.get_attribute("aria-disabled")
+                        if aria_dis != "true" and await send_btn.is_enabled():
+                            btn_still_active = True
+
+                    if not submitted or btn_still_active:
+                        logger.info("Nút Send vẫn còn active, nhấn phím Enter trên ô nhập để gửi form...")
+                        await input_element.focus()
+                        await input_element.press("Enter")
+                        await asyncio.sleep(1.5)
+                except Exception as ent_err:
+                    logger.debug(f"Thử nhấn Enter fallback: {ent_err}")
+
+                return True
 
             if check > 0 and check % 15 == 0:
                 logger.info(f"Vẫn đang chờ nạp ảnh & nút Send... (has_image={has_image}, is_uploading={is_uploading}, btn_active={btn_active}) [{check * 0.2:.1f}s/{timeout_seconds}s]")
@@ -394,11 +432,18 @@ class GeminiBot:
             logger.error(f"❌ Không thể gửi prompt vì ẢNH CHƯA ĐƯỢC NẠP VÀO TRÌNH DUYỆT sau {timeout_seconds}s!")
             return False
 
-        logger.warning(f"Hết thời gian chờ ({timeout_seconds}s). Nhấn Enter cưỡng chế...")
+        logger.warning(f"Hết thời gian chờ ({timeout_seconds}s). Kích hoạt gửi cưỡng chế...")
+        try:
+            if send_btn and await send_btn.is_visible(timeout=300):
+                await send_btn.click(force=True)
+                await asyncio.sleep(1)
+        except Exception:
+            pass
+
         try:
             await input_element.focus()
             await input_element.press("Enter")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
             return True
         except Exception as e:
             logger.error(f"Lỗi khi nhấn Enter: {e}")
@@ -659,15 +704,22 @@ class GeminiBot:
         initial_video_count = await self.page.locator(VIDEO_PLAYER_SELECTOR).count()
         
         video_found = False
-        for sec in range(180):
+        # Chờ tối đa 10 phút (600 giây = 400 lần kiểm tra x 1.5 giây)
+        for check in range(400):
             current_video_count = await self.page.locator(VIDEO_PLAYER_SELECTOR).count()
             if current_video_count > initial_video_count:
                 video_found = True
                 break
+            
+            # Cứ mỗi 30 giây in log thông báo tiến trình chờ
+            if (check + 1) % 20 == 0:
+                elapsed_sec = int((check + 1) * 1.5)
+                logger.info(f"Đang chờ Gemini render video... ({elapsed_sec}s / 600s)")
+                
             await asyncio.sleep(1.5)
             
         if not video_found:
-            raise Exception("Quá thời gian chờ (3 phút) nhưng Gemini vẫn chưa tạo ra video.")
+            raise Exception("Quá thời gian chờ (10 phút) nhưng Gemini vẫn chưa tạo ra video.")
 
         logger.info("Đã phát hiện video mới. Đang chuẩn bị tải về...")
         update_task_fn(task, status="downloading generated video")
