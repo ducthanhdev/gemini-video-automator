@@ -129,6 +129,16 @@
                         </div>
                     </div>
 
+                    <div class="form-row">
+                        <div class="form-group full">
+                            <label for="auto-retry-failed">Tự động lặp lại theo vòng khi task bị lỗi (Auto-retry loop)</label>
+                            <select id="auto-retry-failed">
+                                <option value="true">Bật (Chạy hết 1 vòng, tự động lặp lại các task lỗi cho đến khi hoàn thành)</option>
+                                <option value="false">Tắt (Dừng khi hết danh sách, giữ nguyên task lỗi)</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="advanced-settings-toggle" id="advanced-toggle">
                         <span>🛠️ Cấu hình Prompt nâng cao</span>
                         <span class="toggle-arrow" id="toggle-arrow">▼</span>

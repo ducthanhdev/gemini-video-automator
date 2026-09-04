@@ -24,6 +24,7 @@ class TaskQueueManager:
         self.meta_prompt_template: str = DEFAULT_META_PROMPT_TEMPLATE
         self.voice_gender: str = "hoaimy"  # hoaimy (nữ) hoặc namminh (nam)
         self.enable_voiceover: bool = True
+        self.auto_retry_failed: bool = True  # Tự động lặp lại theo vòng cho đến khi tất cả task hoàn thành
 
         # Tải cấu hình và hàng đợi từ tệp lưu trữ
         self._load_settings()
@@ -42,6 +43,7 @@ class TaskQueueManager:
                 self.meta_prompt_template = data.get("meta_prompt_template") or DEFAULT_META_PROMPT_TEMPLATE
                 self.voice_gender = data.get("voice_gender", "hoaimy")
                 self.enable_voiceover = data.get("enable_voiceover", False)
+                self.auto_retry_failed = data.get("auto_retry_failed", True)
                 logger.info("Đã tải cấu hình cài đặt từ file settings.json.")
             else:
                 self._save_settings()
@@ -58,7 +60,8 @@ class TaskQueueManager:
                 "system_instruction": self.system_instruction,
                 "meta_prompt_template": self.meta_prompt_template,
                 "voice_gender": self.voice_gender,
-                "enable_voiceover": self.enable_voiceover
+                "enable_voiceover": self.enable_voiceover,
+                "auto_retry_failed": self.auto_retry_failed
             }
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -113,6 +116,7 @@ class TaskQueueManager:
             "ratio": ratio,
             "status": "pending",
             "progress": 0,
+            "retry_count": 0,
             "output_video": None,
             "error": None
         }

@@ -56,6 +56,7 @@ class SettingsUpdate(BaseModel):
     meta_prompt_template: str = ""
     voice_gender: str = "hoaimy"
     enable_voiceover: bool = True
+    auto_retry_failed: bool = True
 
 class TaskCreate(BaseModel):
     images: List[str]
@@ -90,6 +91,7 @@ async def update_settings(settings: SettingsUpdate):
     manager.meta_prompt_template = settings.meta_prompt_template
     manager.voice_gender = settings.voice_gender
     manager.enable_voiceover = settings.enable_voiceover
+    manager.auto_retry_failed = settings.auto_retry_failed
     manager._save_settings()
     logger.info("Cập nhật và lưu cấu hình cố định thành công.")
     return {"status": "success", "settings": {
@@ -99,7 +101,8 @@ async def update_settings(settings: SettingsUpdate):
         "system_instruction": manager.system_instruction,
         "meta_prompt_template": manager.meta_prompt_template,
         "voice_gender": manager.voice_gender,
-        "enable_voiceover": manager.enable_voiceover
+        "enable_voiceover": manager.enable_voiceover,
+        "auto_retry_failed": manager.auto_retry_failed
     }}
 
 @app.get("/api/settings")
@@ -111,7 +114,8 @@ async def get_settings():
         "system_instruction": manager.system_instruction,
         "meta_prompt_template": manager.meta_prompt_template,
         "voice_gender": manager.voice_gender,
-        "enable_voiceover": manager.enable_voiceover
+        "enable_voiceover": manager.enable_voiceover,
+        "auto_retry_failed": manager.auto_retry_failed
     }
 
 @app.post("/api/upload")

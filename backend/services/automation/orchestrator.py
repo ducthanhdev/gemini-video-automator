@@ -73,6 +73,11 @@ class AutomationManager:
     @enable_voiceover.setter
     def enable_voiceover(self, val): setattr(self.queue_mgr, "enable_voiceover", val)
 
+    @property
+    def auto_retry_failed(self): return getattr(self.queue_mgr, "auto_retry_failed", True)
+    @auto_retry_failed.setter
+    def auto_retry_failed(self, val): setattr(self.queue_mgr, "auto_retry_failed", val)
+
     # Forwarding properties cho BrowserDriver
     @property
     def status(self): return self.driver.status
@@ -230,6 +235,15 @@ class AutomationManager:
             logger.warning("Dừng xử lý hàng đợi vì chưa đăng nhập.")
             return
 
+        # Nếu trong hàng đợi không còn task pending nào nhưng có task failed, tự động đưa các task failed về pending để chạy lại
+        has_pending = any(t.get("status") == "pending" for t in self.queue)
+        has_failed = any(t.get("status") == "failed" for t in self.queue)
+        if not has_pending and has_failed and self.auto_retry_failed:
+            logger.info("Không còn nhiệm vụ pending mới, tự động đưa các nhiệm vụ failed về pending để chạy lại...")
+            for t in self.queue:
+                if t.get("status") == "failed":
+                    self.update_task(t, status="pending", progress=0, error=None)
+
         self.status = "running"
         self.loop_task = asyncio.create_task(self._queue_loop())
         logger.info("Đã bắt đầu tiến trình xử lý hàng đợi.")
@@ -244,20 +258,76 @@ class AutomationManager:
         logger.info("Đã tạm dừng tiến trình xử lý hàng đợi.")
 
     async def _queue_loop(self):
-        """Vòng lặp chính xử lý từng nhiệm vụ trong hàng đợi."""
+        """Vòng lặp chính xử lý từng nhiệm vụ trong hàng đợi theo các vòng lặp (rounds)."""
+        round_index = 1
+        logger.info(f"🚀 Bắt đầu chu kỳ xử lý hàng đợi - Vòng {round_index}")
+
         while self.status == "running":
+            # 1. Tìm nhiệm vụ tiếp theo ở trạng thái 'pending'
             task_to_run = None
             for t in self.queue:
-                if t["status"] == "pending":
+                if t.get("status") == "pending":
                     task_to_run = t
                     break
-                    
+
+            # 2. Nếu trong vòng hiện tại không còn nhiệm vụ nào 'pending'
             if not task_to_run:
-                logger.info("Hàng đợi trống. Tiến trình tự động hóa chuyển về idle.")
-                self.status = "idle"
-                break
-                
+                # Kiểm tra danh sách nhiệm vụ bị lỗi (failed) trong hàng đợi
+                failed_tasks = [t for t in self.queue if t.get("status") == "failed"]
+
+                # Nếu không còn nhiệm vụ nào bị lỗi (hoặc tính năng tự động lặp lại bị tắt)
+                if not failed_tasks or not self.auto_retry_failed:
+                    if not failed_tasks:
+                        logger.info("🎉 Tất cả các nhiệm vụ trong hàng đợi đã hoàn thành thành công! Tiến trình tự động hóa chuyển về idle.")
+                    else:
+                        logger.info(f"Hàng đợi đã hoàn thành lượt hiện tại (còn {len(failed_tasks)} nhiệm vụ lỗi nhưng tính năng tự động lặp lại đang tắt).")
+                    self.status = "idle"
+                    break
+
+                # Có nhiệm vụ bị lỗi -> Thông báo và tạm nghỉ giải tỏa nghẽn trước khi lặp lại vòng tiếp theo
+                logger.warning(
+                    f"⚠️ Kết thúc Vòng {round_index}: Có {len(failed_tasks)}/{len(self.queue)} nhiệm vụ bị lỗi "
+                    f"(thường do nghẽn máy chủ hoặc mạng từ phía Gemini)."
+                )
+                logger.info(
+                    f"⏳ Đang tạm dừng 20 giây để máy chủ Gemini giải tỏa nghẽn trước khi tự động chạy lại Vòng {round_index + 1}..."
+                )
+
+                # Chờ 20 giây có kiểm tra ngắt để phản hồi ngay nếu người dùng nhấn Dừng
+                for _ in range(20):
+                    if self.status != "running":
+                        break
+                    await asyncio.sleep(1)
+
+                if self.status != "running":
+                    logger.info("Tiến trình xử lý hàng đợi đã bị dừng bởi người dùng.")
+                    break
+
+                # Đưa toàn bộ nhiệm vụ failed về pending để chạy lại trong vòng tiếp theo
+                round_index += 1
+                logger.info(f"🔄 Bắt đầu Vòng {round_index}: Tự động chạy lại {len(failed_tasks)} nhiệm vụ bị lỗi...")
+                for t in failed_tasks:
+                    retry_cnt = t.get("retry_count", 0) + 1
+                    self.update_task(
+                        t,
+                        status="pending",
+                        progress=0,
+                        retry_count=retry_cnt,
+                        error=None
+                    )
+                continue
+
+            # 3. Đảm bảo trình duyệt luôn mở và sẵn sàng trước khi thực thi nhiệm vụ
+            try:
+                await self.driver.initialize()
+            except Exception as init_err:
+                logger.error(f"Lỗi khi kiểm tra/khởi tạo trình duyệt trước task {task_to_run['id']}: {init_err}")
+
             self.current_task_id = task_to_run["id"]
+            current_retry = task_to_run.get("retry_count", 0)
+            retry_info = f" (Lần thử {current_retry + 1} - Vòng {round_index})" if current_retry > 0 else f" (Vòng {round_index})"
+            logger.info(f"▶️ Bắt đầu xử lý nhiệm vụ: {task_to_run['id']}{retry_info}")
+
             try:
                 await self._execute_task(task_to_run)
             except asyncio.CancelledError:
@@ -265,11 +335,17 @@ class AutomationManager:
                 logger.info(f"Nhiệm vụ {task_to_run['id']} bị hủy giữa chừng.")
                 raise
             except Exception as e:
-                logger.error(f"Lỗi khi thực thi nhiệm vụ {task_to_run['id']}: {e}")
-                self.update_task(task_to_run, status="failed", error=str(e))
+                logger.error(f"❌ Lỗi khi thực thi nhiệm vụ {task_to_run['id']}: {e}")
+                retry_cnt = task_to_run.get("retry_count", 0) + 1
+                self.update_task(
+                    task_to_run,
+                    status="failed",
+                    error=str(e),
+                    retry_count=retry_cnt
+                )
             finally:
                 self.current_task_id = None
-                
+
             await asyncio.sleep(5)
 
     async def _execute_task(self, task: dict[str, Any]):
@@ -279,29 +355,39 @@ class AutomationManager:
         
         abs_image_paths = [UPLOAD_DIR / filename for filename in task["images"]]
         
-        api_key_to_use = self.api_key if self.prompt_mode == "api" else None
-        opt_res = await asyncio.to_thread(
-            optimize_prompt,
-            abs_image_paths,
-            task["user_description"],
-            api_key_to_use,
-            self.system_instruction,
-            self.meta_prompt_template
-        )
-        api_error = False
-        if isinstance(opt_res, dict):
-            optimized = opt_res.get("prompt", "")
-            voiceover = opt_res.get("voiceover", "")
-            caption = opt_res.get("caption", "")
-            hashtags = opt_res.get("hashtags", "")
-            api_error = opt_res.get("api_error", False)
+        # Nếu task đã có sẵn prompt tối ưu & caption (ví dụ từ vòng trước), tái sử dụng để tiết kiệm thời gian và tránh nghẽn
+        if task.get("optimized_prompt") and task.get("caption") and task.get("hashtags"):
+            logger.info(f"Nhiệm vụ {task['id']} đã có sẵn prompt tối ưu & caption. Bỏ qua bước tối ưu lại, tiến hành tạo video ngay...")
+            optimized = task["optimized_prompt"]
+            voiceover = task.get("voiceover", "")
+            caption = task.get("caption", "")
+            hashtags = task.get("hashtags", "")
+            api_error = False
+            self.update_task(task, progress=10)
         else:
-            optimized = str(opt_res)
-            voiceover = ""
-            caption = ""
-            hashtags = ""
+            api_key_to_use = self.api_key if self.prompt_mode == "api" else None
+            opt_res = await asyncio.to_thread(
+                optimize_prompt,
+                abs_image_paths,
+                task["user_description"],
+                api_key_to_use,
+                self.system_instruction,
+                self.meta_prompt_template
+            )
+            api_error = False
+            if isinstance(opt_res, dict):
+                optimized = opt_res.get("prompt", "")
+                voiceover = opt_res.get("voiceover", "")
+                caption = opt_res.get("caption", "")
+                hashtags = opt_res.get("hashtags", "")
+                api_error = opt_res.get("api_error", False)
+            else:
+                optimized = str(opt_res)
+                voiceover = ""
+                caption = ""
+                hashtags = ""
 
-        self.update_task(task, optimized_prompt=optimized, voiceover=voiceover, caption=caption, hashtags=hashtags, progress=10)
+            self.update_task(task, optimized_prompt=optimized, voiceover=voiceover, caption=caption, hashtags=hashtags, progress=10)
 
         num_cycles = max(1, task["duration"] // CLIP_DURATION)
         logger.info(f"Nhiệm vụ {task['id']} yêu cầu thời lượng {task['duration']}s. CLIP_DURATION = {CLIP_DURATION}s. Số lượng clip cần sinh: {num_cycles}")

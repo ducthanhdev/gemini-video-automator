@@ -52,6 +52,9 @@ async function initSettings() {
             
             const voiceGenderElem = document.getElementById("voice-gender");
             if (voiceGenderElem) voiceGenderElem.value = data.voice_gender || "hoaimy";
+
+            const autoRetryElem = document.getElementById("auto-retry-failed");
+            if (autoRetryElem) autoRetryElem.value = data.auto_retry_failed !== undefined ? String(data.auto_retry_failed) : "true";
         }
     } catch (e) {
         console.error("Lỗi nạp cấu hình cài đặt:", e);
@@ -76,6 +79,7 @@ async function initSettings() {
         const metaPromptTemplate = document.getElementById("meta-prompt-template").value;
         const enableVoiceover = document.getElementById("enable-voiceover") ? (document.getElementById("enable-voiceover").value === "true") : true;
         const voiceGender = document.getElementById("voice-gender") ? document.getElementById("voice-gender").value : "hoaimy";
+        const autoRetryFailed = document.getElementById("auto-retry-failed") ? (document.getElementById("auto-retry-failed").value === "true") : true;
 
         try {
             const res = await fetch("/api/settings", {
@@ -88,7 +92,8 @@ async function initSettings() {
                     system_instruction: systemInstruction,
                     meta_prompt_template: metaPromptTemplate,
                     enable_voiceover: enableVoiceover,
-                    voice_gender: voiceGender
+                    voice_gender: voiceGender,
+                    auto_retry_failed: autoRetryFailed
                 })
             });
             if (res.ok) {
@@ -497,7 +502,7 @@ function updateQueueList(queue, currentTaskId) {
         html += `
             <div class="queue-item ${activeClass} ${task.status}">
                 <div class="queue-item-header">
-                    <span class="task-id">ID: ${task.id.substring(0, 8)}... (${task.duration}s | ${task.ratio || '9:16'})</span>
+                    <span class="task-id">ID: ${task.id.substring(0, 8)}... (${task.duration}s | ${task.ratio || '9:16'})${task.retry_count ? ` <span class="badge-retry" style="margin-left:6px; font-size:0.75rem; background:rgba(245, 158, 11, 0.18); color:#f59e0b; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(245, 158, 11, 0.35);">🔄 Lần thử ${task.retry_count + 1}</span>` : ''}</span>
                     <span class="task-status ${task.status}">${task.status.toUpperCase()}</span>
                 </div>
                 <div class="task-desc">${task.user_description}</div>
@@ -509,6 +514,7 @@ function updateQueueList(queue, currentTaskId) {
                 <div class="task-info-footer">
                     <span>Tiến trình: ${progressPercent}%</span>
                     <span>Ảnh: ${task.images.length}</span>
+                    ${task.retry_count ? `<span style="color:#f59e0b; font-weight:500;">🔄 Đã thử: ${task.retry_count} lần</span>` : ''}
                 </div>
                 ${errorMsgHtml}
                 ${actionsHtml}
