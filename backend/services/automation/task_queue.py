@@ -4,9 +4,19 @@ Quản lý trạng thái hàng đợi nhiệm vụ và cấu hình lưu trữ JS
 
 import json
 import logging
+import os
+import shutil
 import uuid
+from pathlib import Path
 from typing import Any
-from backend.config import QUEUE_FILE, SETTINGS_FILE, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_META_PROMPT_TEMPLATE
+from backend.config import (
+    QUEUE_FILE,
+    QUEUE_BACKUP_FILE,
+    SETTINGS_FILE,
+    OUTPUT_DIR,
+    DEFAULT_SYSTEM_INSTRUCTION,
+    DEFAULT_META_PROMPT_TEMPLATE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +61,7 @@ class TaskQueueManager:
             logger.error(f"Lỗi khi tải cấu hình cài đặt từ file: {e}")
 
     def _save_settings(self):
-        """Lưu cấu hình cài đặt vào file settings.json."""
+        """Lưu cấu hình cài đặt vào file settings.json bằng atomic write."""
         try:
             data = {
                 "api_key": self.api_key,
@@ -63,40 +73,136 @@ class TaskQueueManager:
                 "enable_voiceover": self.enable_voiceover,
                 "auto_retry_failed": self.auto_retry_failed
             }
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            temp_file = SETTINGS_FILE.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            logger.info("Đã lưu cấu hình cài đặt vào file settings.json.")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, SETTINGS_FILE)
+            logger.info("Đã lưu cấu hình cài đặt an toàn vào file settings.json.")
         except Exception as e:
             logger.error(f"Lỗi khi lưu cấu hình cài đặt vào file: {e}")
 
-    def _load_queue(self):
-        """Tải hàng đợi từ file queue.json nếu có."""
+    def _recover_completed_tasks_from_outputs(self):
+        """Tự phục hồi các nhiệm vụ đã hoàn thành từ thư mục storage/outputs nếu bị thiếu trong hàng đợi."""
+        existing_ids = {t["id"] for t in self.queue}
+        recovered_count = 0
         try:
-            if QUEUE_FILE.exists():
-                with open(QUEUE_FILE, "r", encoding="utf-8") as f:
-                    self.queue = json.load(f)
-                # Đưa các tác vụ chưa hoàn thành (đang chạy dở dang hoặc bị kẹt) về pending khi restart server
-                for task in self.queue:
-                    if task.get("status") not in ["completed", "failed", "pending"]:
-                        logger.warning(f"Tự động khôi phục tác vụ {task.get('id')} bị kẹt ở trạng thái '{task.get('status')}' về 'pending'.")
-                        task["status"] = "pending"
-                        task["progress"] = 0
-                        task["error"] = None
+            if not OUTPUT_DIR.exists():
+                return
+            for meta_file in sorted(OUTPUT_DIR.glob("video_*.json")):
+                try:
+                    task_id = meta_file.stem.replace("video_", "")
+                    if task_id in existing_ids:
+                        continue
+                    video_file = OUTPUT_DIR / f"{meta_file.stem}.mp4"
+                    with open(meta_file, "r", encoding="utf-8") as f:
+                        meta_data = json.load(f)
+
+                    user_desc = meta_data.get("caption") or meta_data.get("prompt") or "Video đã tạo thành công"
+                    # Rút ngắn tiêu đề nếu quá dài
+                    user_desc_short = user_desc.split("\n")[0][:100]
+
+                    recovered_task = {
+                        "id": task_id,
+                        "images": [],
+                        "user_description": user_desc_short,
+                        "optimized_prompt": meta_data.get("prompt", ""),
+                        "voiceover": meta_data.get("voiceover", ""),
+                        "caption": meta_data.get("caption", ""),
+                        "hashtags": meta_data.get("hashtags", ""),
+                        "duration": 10,
+                        "ratio": "9:16",
+                        "status": "completed",
+                        "progress": 100,
+                        "retry_count": 0,
+                        "output_video": video_file.name if video_file.exists() else meta_data.get("video_filename"),
+                        "error": None
+                    }
+                    self.queue.append(recovered_task)
+                    existing_ids.add(task_id)
+                    recovered_count += 1
+                except Exception as item_err:
+                    logger.warning(f"Lỗi khi đọc metadata phục hồi từ {meta_file}: {item_err}")
+
+            if recovered_count > 0:
+                logger.info(f"🎉 Đã tự động phục hồi {recovered_count} nhiệm vụ hoàn thành từ thư mục outputs.")
                 self._save_queue()
-                logger.info(f"Đã tải {len(self.queue)} nhiệm vụ từ file lưu trữ.")
-            else:
-                self.queue = []
         except Exception as e:
-            logger.error(f"Lỗi khi tải hàng đợi từ file: {e}")
-            self.queue = []
+            logger.error(f"Lỗi trong quá trình tự phục hồi nhiệm vụ từ outputs: {e}")
+
+    def _load_queue(self):
+        """Tải hàng đợi từ file queue.json, tự động phục hồi từ backup hoặc outputs nếu gặp sự cố."""
+        loaded_tasks: list[dict[str, Any]] | None = None
+
+        # 1. Thử nạp từ file queue.json chính
+        if QUEUE_FILE.exists() and QUEUE_FILE.stat().st_size > 2:
+            try:
+                with open(QUEUE_FILE, "r", encoding="utf-8") as f:
+                    loaded_tasks = json.load(f)
+            except Exception as e:
+                logger.error(f"Lỗi khi đọc file queue.json ({e}). Chuẩn bị thử nạp từ file backup...")
+                loaded_tasks = None
+
+        # 2. Nếu file chính không tồn tại hoặc bị lỗi/trống, thử phục hồi từ queue.json.bak
+        if not loaded_tasks and QUEUE_BACKUP_FILE.exists() and QUEUE_BACKUP_FILE.stat().st_size > 2:
+            try:
+                logger.info("Đang phục hồi hàng đợi từ file sao lưu queue.json.bak...")
+                with open(QUEUE_BACKUP_FILE, "r", encoding="utf-8") as f:
+                    bak_tasks = json.load(f)
+                if isinstance(bak_tasks, list):
+                    loaded_tasks = bak_tasks
+                    logger.info(f"Phục hồi thành công {len(loaded_tasks)} nhiệm vụ từ file backup.")
+            except Exception as bak_err:
+                logger.error(f"Lỗi khi đọc file backup queue.json.bak: {bak_err}")
+
+        self.queue = loaded_tasks if isinstance(loaded_tasks, list) else []
+
+        # 3. Phục hồi các task đã hoàn thành từ thư mục outputs nếu chưa có trong queue
+        self._recover_completed_tasks_from_outputs()
+
+        # 4. Bảo toàn trạng thái các task:
+        # - Task 'completed': giữ nguyên
+        # - Task 'failed': giữ nguyên
+        # - Task 'pending': giữ nguyên
+        # - Task bị ngắt ngang khi đang chạy dở dang (optimizing, uploading, etc.):
+        #   Khôi phục an toàn về 'pending', giữ nguyên optimized_prompt/voiceover/caption đã tạo xong
+        status_changed = False
+        for task in self.queue:
+            status = task.get("status")
+            if status not in ["completed", "failed", "pending"]:
+                logger.warning(
+                    f"Tự động khôi phục nhiệm vụ {task.get('id')} bị ngắt ngang ở trạng thái '{status}' về 'pending'."
+                )
+                task["status"] = "pending"
+                task["progress"] = 0
+                task["error"] = None
+                status_changed = True
+
+        if status_changed or not QUEUE_FILE.exists():
+            self._save_queue()
+
+        logger.info(f"Đã tải thành công {len(self.queue)} nhiệm vụ trong hàng đợi.")
 
     def _save_queue(self):
-        """Lưu hàng đợi vào file queue.json."""
+        """Lưu hàng đợi vào file queue.json bằng cơ chế atomic write và tạo bản sao lưu an toàn."""
         try:
-            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+            temp_file = QUEUE_FILE.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(self.queue, f, ensure_ascii=False, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
+
+            # Nếu lưu thành công danh sách hợp lệ và queue không rỗng, cập nhật bản sao lưu .bak
+            if self.queue and QUEUE_FILE.exists() and QUEUE_FILE.stat().st_size > 2:
+                try:
+                    shutil.copy2(QUEUE_FILE, QUEUE_BACKUP_FILE)
+                except Exception as bak_err:
+                    logger.warning(f"Không thể sao lưu queue.json.bak: {bak_err}")
+
+            os.replace(temp_file, QUEUE_FILE)
         except Exception as e:
-            logger.error(f"Lỗi khi lưu hàng đợi vào file: {e}")
+            logger.error(f"Lỗi khi lưu hàng đợi an toàn: {e}")
 
     def update_task(self, task: dict[str, Any], **kwargs):
         """Cập nhật thông tin nhiệm vụ và lưu lại vào file queue.json."""

@@ -21,6 +21,8 @@ storage/outputs/*
 !storage/outputs/.gitkeep
 storage/browser_profile/
 storage/queue.json
+storage/queue.json.bak
+storage/*.tmp
 storage/settings.json
 
 # Logs & Environment

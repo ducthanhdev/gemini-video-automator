@@ -20,8 +20,6 @@ def get_local_ip() -> str:
 
 def start_fastapi_server():
     """Khởi chạy máy chủ FastAPI bằng Uvicorn."""
-    logger_config = uvicorn.config.LOGGING_CONFIG
-    # Đảm bảo in log ra console gọn gàng
     uvicorn.run(
         "backend.app:app",
         host=HOST,
@@ -29,6 +27,21 @@ def start_fastapi_server():
         log_level="info",
         reload=False  # Tắt reload ở môi trường desktop để tránh xung đột luồng
     )
+
+def cleanup_and_exit():
+    """Bảo toàn trạng thái hàng đợi và đóng an toàn các tiến trình nền trước khi thoát."""
+    print("\n🛑 Đang lưu trạng thái hàng đợi và dọn dẹp an toàn...")
+    try:
+        from backend.app import manager
+        if manager.current_task_id:
+            curr_task = manager.get_task(manager.current_task_id)
+            if curr_task:
+                manager.update_task(curr_task, status="pending", progress=0)
+        manager._save_queue()
+        print("✅ Đã lưu toàn vẹn trạng thái hàng đợi vào đĩa.")
+    except Exception as e:
+        print(f"⚠️ Cảnh báo khi lưu trạng thái: {e}")
+    sys.exit(0)
 
 if __name__ == "__main__":
     server_thread = threading.Thread(target=start_fastapi_server, daemon=True)
@@ -68,6 +81,6 @@ if __name__ == "__main__":
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\nĐang dừng ứng dụng...")
-            
-    sys.exit(0)
+            pass
+    finally:
+        cleanup_and_exit()

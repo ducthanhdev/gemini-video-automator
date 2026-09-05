@@ -116,7 +116,25 @@ class AutomationManager:
         if has_pending:
             logger.info("Đã tải các nhiệm vụ đang chờ trong hàng đợi. Chờ người dùng nhấn Khởi chạy.")
 
-    async def shutdown(self): await self.driver.shutdown()
+    async def shutdown(self):
+        logger.info("Đang tiến hành dọn dẹp và tắt AutomationManager...")
+        if self.current_task_id:
+            curr_task = self.get_task(self.current_task_id)
+            if curr_task:
+                self.update_task(curr_task, status="pending", progress=0)
+            self.current_task_id = None
+        if self.loop_task:
+            self.loop_task.cancel()
+            try:
+                await self.loop_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+            self.loop_task = None
+        self._save_queue()
+        await self.driver.shutdown()
+        logger.info("Hoàn tất tắt AutomationManager.")
     async def check_login_status(self): return await self.driver.check_login_status()
     async def start_login_session(self): await self.driver.start_login_session()
     async def switch_account(self): await self.driver.switch_account()

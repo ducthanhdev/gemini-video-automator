@@ -336,6 +336,7 @@ class GeminiBot:
         logger.info(f"Đang theo dõi ô nhập & nút Send... (Cần có ảnh đính kèm: {require_image})")
 
         max_checks = int(timeout_seconds / 0.2)
+        send_btn = None
 
         for check in range(max_checks):
             has_image = True

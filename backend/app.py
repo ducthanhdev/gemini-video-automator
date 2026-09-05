@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import asyncio
 from contextlib import asynccontextmanager
 
-from backend.config import BASE_DIR, UPLOAD_DIR, OUTPUT_DIR, PORT
+from backend.config import UPLOAD_DIR, OUTPUT_DIR, PORT, STATIC_DIR, TEMPLATES_DIR
 from backend.services.automation import AutomationManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -30,11 +30,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gemini Video Batch Generator", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "frontend" / "static")), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
-templates = Jinja2Templates(directory=str(BASE_DIR / "frontend" / "templates"))
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 def get_local_ip() -> str:
     """Quét và lấy IP cục bộ của máy tính trong mạng nội bộ Wi-Fi."""

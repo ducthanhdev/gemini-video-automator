@@ -1,13 +1,45 @@
+import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # Đang chạy file đóng gói PyInstaller (.exe hoặc binary)
+    # Lưu storage ngay cạnh file thực thi để không bao giờ bị xóa khi tắt ứng dụng
+    BASE_DIR = Path(sys.executable).resolve().parent
+    APP_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+else:
+    # Đang chạy từ mã nguồn (python run.py)
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    APP_DIR = BASE_DIR
 
 STORAGE_DIR = BASE_DIR / "storage"
 UPLOAD_DIR = STORAGE_DIR / "uploads"
 OUTPUT_DIR = STORAGE_DIR / "outputs"
 PROFILE_DIR = STORAGE_DIR / "browser_profile"
 QUEUE_FILE = STORAGE_DIR / "queue.json"
+QUEUE_BACKUP_FILE = STORAGE_DIR / "queue.json.bak"
 SETTINGS_FILE = STORAGE_DIR / "settings.json"
+
+STATIC_DIR: Path = APP_DIR / "frontend" / "static"
+TEMPLATES_DIR: Path = APP_DIR / "frontend" / "templates"
+
+__all__ = [
+    "BASE_DIR",
+    "APP_DIR",
+    "STORAGE_DIR",
+    "UPLOAD_DIR",
+    "OUTPUT_DIR",
+    "PROFILE_DIR",
+    "QUEUE_FILE",
+    "QUEUE_BACKUP_FILE",
+    "SETTINGS_FILE",
+    "STATIC_DIR",
+    "TEMPLATES_DIR",
+    "HOST",
+    "PORT",
+    "CLIP_DURATION",
+    "DEFAULT_SYSTEM_INSTRUCTION",
+    "DEFAULT_META_PROMPT_TEMPLATE",
+]
 
 for directory in [STORAGE_DIR, UPLOAD_DIR, OUTPUT_DIR, PROFILE_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
