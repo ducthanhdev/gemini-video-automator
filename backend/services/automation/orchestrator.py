@@ -387,8 +387,9 @@ class AutomationManager:
             self.update_task(task, progress=10)
         else:
             api_key_to_use = self.api_key if self.prompt_mode == "api" else None
+            from backend.services.prompt_optimizer import optimize_prompt as opt_func
             opt_res = await asyncio.to_thread(
-                optimize_prompt,
+                opt_func,
                 abs_image_paths,
                 task["user_description"],
                 api_key_to_use,

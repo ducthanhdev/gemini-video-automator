@@ -392,12 +392,20 @@ def optimize_prompt(
 
 def _generate_meta_prompt(user_description: str, has_multiple_images: bool, meta_template: str) -> str:
     """Tạo Meta-Prompt tối ưu gửi thẳng cho Gemini Web."""
-    try:
-        formatted_prompt = meta_template.format(description=user_description)
-    except Exception as e:
-        logger.error(f"Lỗi định dạng meta_template: {e}. Fallback về mặc định.")
-        from backend.config import DEFAULT_META_PROMPT_TEMPLATE
-        formatted_prompt = DEFAULT_META_PROMPT_TEMPLATE.format(description=user_description)
+    from backend.config import DEFAULT_META_PROMPT_TEMPLATE
+
+    template = meta_template if (meta_template and meta_template.strip()) else DEFAULT_META_PROMPT_TEMPLATE
+
+    # Dùng replace an toàn thay vì str.format() để tránh KeyError khi template chứa JSON {"text": ...}
+    replaced = False
+    for placeholder in ["{description}", "{user_description}", "{product_description}", "{mota}"]:
+        if placeholder in template:
+            formatted_prompt = template.replace(placeholder, user_description)
+            replaced = True
+            break
+
+    if not replaced:
+        formatted_prompt = f"{template}\n\n---\nMÔ TẢ SẢN PHẨM CỦA TÔI: {user_description}"
 
     if has_multiple_images:
         if "transition" not in formatted_prompt.lower():
@@ -405,4 +413,5 @@ def _generate_meta_prompt(user_description: str, has_multiple_images: bool, meta
         return formatted_prompt
     else:
         return formatted_prompt
+
 
