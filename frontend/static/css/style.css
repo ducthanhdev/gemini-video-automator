@@ -133,6 +133,45 @@ body {
     display: none;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-settings-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 7px 15px;
+    border-radius: var(--border-radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+
+.btn-settings-header:hover {
+    background: rgba(37, 99, 235, 0.15);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #93c5fd;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.btn-settings-header .icon {
+    font-size: 1.05rem;
+    transition: transform 0.4s ease;
+}
+
+.btn-settings-header:hover .icon {
+    transform: rotate(60deg);
+}
+
 .connection-status {
     display: flex;
     align-items: center;
@@ -1247,6 +1286,91 @@ textarea {
 
 .modal.show .modal-content {
     transform: scale(1);
+}
+
+/* ==========================================================================
+   MODAL CÀI ĐẶT CẤU HÌNH (POPUP)
+   ========================================================================== */
+.settings-modal-card {
+    position: relative;
+    background-color: #111827;
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-lg);
+    width: 92%;
+    max-width: 640px;
+    max-height: 88vh;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(37, 99, 235, 0.15);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    transform: scale(0.95);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+}
+
+.modal.show .settings-modal-card {
+    transform: scale(1);
+}
+
+.settings-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--card-border);
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+}
+
+.settings-modal-header h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.settings-modal-close {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--card-border);
+    color: var(--text-secondary);
+    font-size: 20px;
+    line-height: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.settings-modal-close:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+    transform: rotate(90deg);
+}
+
+.settings-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.settings-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--card-border);
 }
 
 /* Tự động kéo rộng nếu là video ngang */

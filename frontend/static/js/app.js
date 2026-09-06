@@ -64,6 +64,33 @@ async function initSettings() {
         console.error("Lỗi nạp cấu hình cài đặt:", e);
     }
 
+    // Modal mở / đóng Cài đặt cấu hình
+    const btnOpenSettings = document.getElementById("btn-open-settings");
+    const settingsModal = document.getElementById("settings-modal");
+    const btnCloseSettings = document.getElementById("settings-modal-close");
+    const btnCancelSettings = document.getElementById("btn-cancel-settings");
+
+    if (btnOpenSettings && settingsModal) {
+        btnOpenSettings.addEventListener("click", () => {
+            settingsModal.classList.add("show");
+        });
+
+        const closeSettings = () => settingsModal.classList.remove("show");
+        if (btnCloseSettings) btnCloseSettings.addEventListener("click", closeSettings);
+        if (btnCancelSettings) btnCancelSettings.addEventListener("click", closeSettings);
+
+        settingsModal.addEventListener("click", (e) => {
+            if (e.target === settingsModal) closeSettings();
+        });
+
+        // Phím Escape đóng modal
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && settingsModal.classList.contains("show")) {
+                closeSettings();
+            }
+        });
+    }
+
     // Hiệu ứng đóng/mở cấu hình nâng cao
     const advancedToggle = document.getElementById("advanced-toggle");
     const advancedContent = document.getElementById("advanced-content");
@@ -75,40 +102,50 @@ async function initSettings() {
     }
 
     // Lắng nghe sự kiện lưu cấu hình
-    document.getElementById("btn-save-settings").addEventListener("click", async () => {
-        const apiKey = document.getElementById("api-key").value;
-        const promptMode = document.getElementById("prompt-mode").value;
-        const longVideoMode = document.getElementById("long-video-mode").value;
-        const systemInstruction = document.getElementById("system-instruction").value;
-        const metaPromptTemplate = document.getElementById("meta-prompt-template").value;
-        const enableVoiceover = document.getElementById("enable-voiceover") ? (document.getElementById("enable-voiceover").value === "true") : true;
-        const voiceGender = document.getElementById("voice-gender") ? document.getElementById("voice-gender").value : "hoaimy";
-        const autoRetryFailed = document.getElementById("auto-retry-failed") ? (document.getElementById("auto-retry-failed").value === "true") : true;
+    const btnSaveSettings = document.getElementById("btn-save-settings");
+    if (btnSaveSettings) {
+        btnSaveSettings.addEventListener("click", async () => {
+            const apiKey = document.getElementById("api-key").value;
+            const promptMode = document.getElementById("prompt-mode").value;
+            const longVideoMode = document.getElementById("long-video-mode").value;
+            const systemInstruction = document.getElementById("system-instruction").value;
+            const metaPromptTemplate = document.getElementById("meta-prompt-template").value;
+            const enableVoiceover = document.getElementById("enable-voiceover") ? (document.getElementById("enable-voiceover").value === "true") : true;
+            const voiceGender = document.getElementById("voice-gender") ? document.getElementById("voice-gender").value : "capcut_cogaighoatngon";
+            const autoRetryFailed = document.getElementById("auto-retry-failed") ? (document.getElementById("auto-retry-failed").value === "true") : true;
 
-        try {
-            const res = await fetch("/api/settings", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    api_key: apiKey,
-                    prompt_mode: promptMode,
-                    long_video_mode: longVideoMode,
-                    system_instruction: systemInstruction,
-                    meta_prompt_template: metaPromptTemplate,
-                    enable_voiceover: enableVoiceover,
-                    voice_gender: voiceGender,
-                    auto_retry_failed: autoRetryFailed
-                })
-            });
-            if (res.ok) {
-                showToast("Đã lưu cấu hình thành công!");
-            } else {
-                showToast("Lỗi khi lưu cấu hình.", true);
+            try {
+                const res = await fetch("/api/settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        prompt_mode: promptMode,
+                        long_video_mode: longVideoMode,
+                        system_instruction: systemInstruction,
+                        meta_prompt_template: metaPromptTemplate,
+                        enable_voiceover: enableVoiceover,
+                        voice_gender: voiceGender,
+                        auto_retry_failed: autoRetryFailed
+                    })
+                });
+                if (res.ok) {
+                    showToast("Đã lưu cấu hình thành công!");
+                    if (settingsModal) settingsModal.classList.remove("show");
+                    
+                    // Đồng bộ giọng đọc sang ô tạo video chính
+                    const createVoiceElem = document.getElementById("create-voice-gender");
+                    if (createVoiceElem && voiceGender) {
+                        createVoiceElem.value = voiceGender;
+                    }
+                } else {
+                    showToast("Lỗi khi lưu cấu hình.", true);
+                }
+            } catch (e) {
+                showToast("Lỗi kết nối máy chủ.", true);
             }
-        } catch (e) {
-            showToast("Lỗi kết nối máy chủ.", true);
-        }
-    });
+        });
+    }
 }
 
 // 3. XỬ LÝ KÉO THẢ & UPLOAD ẢNH

@@ -7,7 +7,7 @@
     <title>VeoFlow AI - Batch Video Creation & Viral Automation Studio</title>
     <link rel="icon" type="image/png" href="/static/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.3">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.4">
     <!-- Thư viện tạo mã QR offline -->
     <script src="/static/js/qrcode.min.js?v=1.3"></script>
 </head>
@@ -23,10 +23,16 @@
                     <span class="brand-tagline">Batch Video Creation & Viral Automation Studio</span>
                 </div>
             </div>
-            <div class="connection-status">
-                <span class="status-indicator" id="server-indicator"></span>
-                <span class="status-text" id="connection-text">Đang kết nối...</span>
-                <span class="ip-display" id="ip-address">URL: {{ local_url }}</span>
+            <div class="header-right">
+                <button type="button" id="btn-open-settings" class="btn-settings-header" title="Cài đặt cấu hình hệ thống">
+                    <span class="icon">⚙️</span>
+                    <span>Cài đặt</span>
+                </button>
+                <div class="connection-status">
+                    <span class="status-indicator" id="server-indicator"></span>
+                    <span class="status-text" id="connection-text">Đang kết nối...</span>
+                    <span class="ip-display" id="ip-address">URL: {{ local_url }}</span>
+                </div>
             </div>
         </header>
 
@@ -126,104 +132,6 @@
                     </div>
                 </div>
 
-                <div class="card settings-card">
-                    <h2><span class="icon">⚙️</span> Cài đặt cấu hình</h2>
-
-                    <div class="form-group">
-                        <label for="api-key">Gemini Developer API Key (AI Studio - Tùy chọn)</label>
-                        <input type="password" id="api-key" placeholder="Nhập API Key để tối ưu prompt cực nhanh...">
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group half">
-                            <label for="prompt-mode">Cách tối ưu prompt</label>
-                            <select id="prompt-mode">
-                                <option value="api">Sử dụng API Key (Mô hình 2.5 Flash)</option>
-                                <option value="meta">Meta-Prompt trực tiếp (Không cần key)</option>
-                            </select>
-                        </div>
-                        <div class="form-group half">
-                            <label for="long-video-mode">Cách ghép video dài</label>
-                            <select id="long-video-mode">
-                                <option value="last_frame">Nối tiếp liên tục (Khung hình cuối)</option>
-                                <option value="crossfade">Mờ chồng chuyển tiếp (Crossfade)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group half">
-                            <label for="enable-voiceover">Tự động lồng tiếng AI (1-Click)</label>
-                            <select id="enable-voiceover">
-                                <option value="true">Bật (Tự lồng giọng đọc vào MP4)</option>
-                                <option value="false">Tắt (Chỉ giữ video gốc)</option>
-                            </select>
-                        </div>
-                        <div class="form-group half">
-                            <label for="voice-gender">Giọng đọc AI Tiếng Việt</label>
-                            <select id="voice-gender">
-                                <optgroup label="🔥 Giọng Bán Hàng & Đề Xuất TikTok/CapCut (Khuyên Dùng)">
-                                    <option value="capcut_cogaighoatngon" selected>Cô Gái Hoạt Ngôn (TikTok Bán Hàng Viral, Chốt đơn cực đỉnh)</option>
-                                    <option value="capcut_nhongotngao">Nhỏ Ngọt Ngào (Mỹ phẩm, Decor, Thời trang - Dễ thương)</option>
-                                    <option value="capcut_thanhnientutin">Thanh Niên Tự Tin (Công nghệ, Đồ gia dụng - Sôi nổi)</option>
-                                    <option value="capcut_nuphothong">Nữ Phổ Thông (Chị Google CapCut - Tự nhiên, rõ ràng)</option>
-                                    <option value="capcut_namtram">Nam Trầm Điện Ảnh (Sang trọng, uy tín)</option>
-                                    <option value="capcut_reviewphim">Review Phim New (Lôi cuốn, kịch tính)</option>
-                                    <option value="capcut_banmai">Ban Mai (Tươi tắn, năng lượng)</option>
-                                    <option value="capcut_mai">Mai (Trầm lắng, nhẹ nhàng)</option>
-                                    <option value="capcut_giongge">Giọng Bé (Đáng yêu, hoạt hình)</option>
-                                    <option value="capcut_vietmeo">Việt Méo (Hài hước, meme)</option>
-                                    <option value="capcut_bantin1">Bản Tin 1 (Thời sự, trang trọng)</option>
-                                    <option value="capcut_sunnyidol">Sunny Idol (Thần tượng, trẻ trung)</option>
-                                    <option value="capcut_gaimoilon">Gái Mới Lớn (Ngây thơ, trong trẻo)</option>
-                                    <option value="capcut_robot">Robot VN (Công nghệ, Sci-Fi)</option>
-                                </optgroup>
-                                <optgroup label="📻 Microsoft Edge Neural TTS (Tin tức)">
-                                    <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, phóng sự)</option>
-                                    <option value="namminh">Nam - Nam Minh (Trầm ấm, thời sự)</option>
-                                </optgroup>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group full">
-                            <label for="auto-retry-failed">Tự động lặp lại theo vòng khi task bị lỗi (Auto-retry loop)</label>
-                            <select id="auto-retry-failed">
-                                <option value="true">Bật (Chạy hết 1 vòng, tự động lặp lại các task lỗi cho đến khi hoàn thành)</option>
-                                <option value="false">Tắt (Dừng khi hết danh sách, giữ nguyên task lỗi)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="advanced-settings-toggle" id="advanced-toggle">
-                        <span>🛠️ Cấu hình Prompt nâng cao</span>
-                        <span class="toggle-arrow" id="toggle-arrow">▼</span>
-                    </div>
-
-                    <div class="advanced-settings-content" id="advanced-content">
-                        <div class="form-group">
-                            <label for="system-instruction">
-                                Chỉ thị hệ thống (System Instruction - Cho API Key)
-                                <small style="display:block;color:rgba(255,255,255,0.5);font-weight:normal;margin-top:4px;font-size:0.75rem;">
-                                    Được dùng khi tối ưu prompt bằng API Key (Mô hình 2.5 Flash).
-                                </small>
-                            </label>
-                            <textarea id="system-instruction" rows="5" placeholder="Nhập System Instruction mặc định..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label for="meta-prompt-template">
-                                Mẫu Meta-Prompt (Cho Web UI không key)
-                                <small style="display:block;color:rgba(255,255,255,0.5);font-weight:normal;margin-top:4px;font-size:0.75rem;">
-                                    Được dùng khi chạy trực tiếp trên Web. Bắt buộc phải có chứa `{description}` để chèn mô tả của bạn.
-                                </small>
-                            </label>
-                            <textarea id="meta-prompt-template" rows="5" placeholder="Nhập Meta-Prompt template..."></textarea>
-                        </div>
-                    </div>
-
-                    <button id="btn-save-settings" class="btn btn-secondary">Lưu cấu hình</button>
-                </div>
             </section>
 
             <div class="layout-resizer" id="layout-resizer"></div>
@@ -329,7 +237,116 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=2.2"></script>
+    <!-- Modal Cài đặt cấu hình hệ thống -->
+    <div id="settings-modal" class="modal">
+        <div class="settings-modal-card">
+            <div class="settings-modal-header">
+                <h2><span class="icon">⚙️</span> Cài đặt cấu hình hệ thống</h2>
+                <button type="button" class="settings-modal-close" id="settings-modal-close" title="Đóng">&times;</button>
+            </div>
+            <div class="settings-modal-body">
+                <div class="form-group">
+                    <label for="api-key">Gemini Developer API Key (AI Studio - Tùy chọn)</label>
+                    <input type="password" id="api-key" placeholder="Nhập API Key để tối ưu prompt cực nhanh...">
+                    <small style="color: var(--text-muted); font-size: 0.75rem;">Không bắt buộc. Nếu để trống, hệ thống sẽ tự động dùng Meta-Prompt trên Web.</small>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="prompt-mode">Cách tối ưu prompt</label>
+                        <select id="prompt-mode">
+                            <option value="api">Sử dụng API Key (Mô hình 2.5 Flash)</option>
+                            <option value="meta">Meta-Prompt trực tiếp (Không cần key)</option>
+                        </select>
+                    </div>
+                    <div class="form-group half">
+                        <label for="long-video-mode">Cách ghép video dài</label>
+                        <select id="long-video-mode">
+                            <option value="last_frame">Nối tiếp liên tục (Khung hình cuối)</option>
+                            <option value="crossfade">Mờ chồng chuyển tiếp (Crossfade)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="enable-voiceover">Tự động lồng tiếng AI (1-Click)</label>
+                        <select id="enable-voiceover">
+                            <option value="true">Bật (Tự lồng giọng đọc vào MP4)</option>
+                            <option value="false">Tắt (Chỉ giữ video gốc)</option>
+                        </select>
+                    </div>
+                    <div class="form-group half">
+                        <label for="voice-gender">Giọng đọc AI mặc định</label>
+                        <select id="voice-gender">
+                            <optgroup label="🔥 Giọng Bán Hàng & Đề Xuất TikTok/CapCut (Khuyên Dùng)">
+                                <option value="capcut_cogaighoatngon" selected>Cô Gái Hoạt Ngôn (TikTok Bán Hàng Viral, Chốt đơn cực đỉnh)</option>
+                                <option value="capcut_nhongotngao">Nhỏ Ngọt Ngào (Mỹ phẩm, Decor, Thời trang - Dễ thương)</option>
+                                <option value="capcut_thanhnientutin">Thanh Niên Tự Tin (Công nghệ, Đồ gia dụng - Sôi nổi)</option>
+                                <option value="capcut_nuphothong">Nữ Phổ Thông (Chị Google CapCut - Tự nhiên, rõ ràng)</option>
+                                <option value="capcut_namtram">Nam Trầm Điện Ảnh (Sang trọng, uy tín)</option>
+                                <option value="capcut_reviewphim">Review Phim New (Lôi cuốn, kịch tính)</option>
+                                <option value="capcut_banmai">Ban Mai (Tươi tắn, năng lượng)</option>
+                                <option value="capcut_mai">Mai (Trầm lắng, nhẹ nhàng)</option>
+                                <option value="capcut_giongge">Giọng Bé (Đáng yêu, hoạt hình)</option>
+                                <option value="capcut_vietmeo">Việt Méo (Hài hước, meme)</option>
+                                <option value="capcut_bantin1">Bản Tin 1 (Thời sự, trang trọng)</option>
+                                <option value="capcut_sunnyidol">Sunny Idol (Thần tượng, trẻ trung)</option>
+                                <option value="capcut_gaimoilon">Gái Mới Lớn (Ngây thơ, trong trẻo)</option>
+                                <option value="capcut_robot">Robot VN (Công nghệ, Sci-Fi)</option>
+                            </optgroup>
+                            <optgroup label="📻 Microsoft Edge Neural TTS (Tin tức)">
+                                <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, phóng sự)</option>
+                                <option value="namminh">Nam - Nam Minh (Trầm ấm, thời sự)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group full">
+                        <label for="auto-retry-failed">Tự động lặp lại theo vòng khi task bị lỗi (Auto-retry loop)</label>
+                        <select id="auto-retry-failed">
+                            <option value="true">Bật (Chạy hết 1 vòng, tự động lặp lại các task lỗi cho đến khi hoàn thành)</option>
+                            <option value="false">Tắt (Dừng khi hết danh sách, giữ nguyên task lỗi)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="advanced-settings-toggle" id="advanced-toggle">
+                    <span>🛠️ Cấu hình Prompt nâng cao</span>
+                    <span class="toggle-arrow" id="toggle-arrow">▼</span>
+                </div>
+
+                <div class="advanced-settings-content" id="advanced-content">
+                    <div class="form-group">
+                        <label for="system-instruction">
+                            Chỉ thị hệ thống (System Instruction - Cho API Key)
+                            <small style="display:block;color:rgba(255,255,255,0.5);font-weight:normal;margin-top:4px;font-size:0.75rem;">
+                                Được dùng khi tối ưu prompt bằng API Key (Mô hình 2.5 Flash).
+                            </small>
+                        </label>
+                        <textarea id="system-instruction" rows="4" placeholder="Nhập System Instruction mặc định..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="meta-prompt-template">
+                            Mẫu Meta-Prompt (Cho Web UI không key)
+                            <small style="display:block;color:rgba(255,255,255,0.5);font-weight:normal;margin-top:4px;font-size:0.75rem;">
+                                Được dùng khi chạy trực tiếp trên Web. Bắt buộc phải có chứa `{description}` để chèn mô tả của bạn.
+                            </small>
+                        </label>
+                        <textarea id="meta-prompt-template" rows="4" placeholder="Nhập Meta-Prompt template..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-settings" style="width: auto; padding: 8px 18px;">Hủy bỏ</button>
+                <button type="button" id="btn-save-settings" class="btn btn-primary" style="width: auto; padding: 8px 24px;">💾 Lưu cấu hình</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js?v=2.4"></script>
 </body>
 
 </html>
