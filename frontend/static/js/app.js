@@ -15,6 +15,10 @@ document.addEventListener("DOMContentLoaded", () => {
     
     startPolling();
     loadVideos();
+    // Tự động cập nhật thư viện video định kỳ mỗi 10 giây
+    setInterval(() => {
+        loadVideos();
+    }, 10000);
 });
 
 function initQRCode() {
@@ -546,12 +550,12 @@ function updateUI(data) {
     // Cập nhật Danh sách Hàng đợi (Queue)
     updateQueueList(data.queue, data.current_task_id);
 
-    // Phát hiện xem có nhiệm vụ nào vừa chuyển từ chạy sang hoàn thành để reload gallery
-    if (lastStatusResponse) {
-        const previouslyRunning = lastStatusResponse.queue.some(t => t.status !== "completed" && t.status !== "failed");
-        const currentlyRunning = data.queue.some(t => t.status !== "completed" && t.status !== "failed");
-        if (previouslyRunning && !currentlyRunning) {
-            // Vừa chạy xong hết, tải lại video gallery
+    // Tự động tải lại Thư viện video khi có bất kỳ nhiệm vụ nào vừa hoàn thành
+    if (lastStatusResponse && lastStatusResponse.queue && data.queue) {
+        const prevCompleted = lastStatusResponse.queue.filter(t => t.status === "completed").length;
+        const currCompleted = data.queue.filter(t => t.status === "completed").length;
+        if (currCompleted !== prevCompleted || (lastStatusResponse.status === "running" && data.status === "idle")) {
+            console.log(`[VeoFlow] Phát hiện video mới (${prevCompleted} -> ${currCompleted}). Tự động tải lại thư viện...`);
             loadVideos();
         }
     }
@@ -640,7 +644,13 @@ function updateQueueList(queue, currentTaskId) {
 async function loadVideos() {
     const grid = document.getElementById("video-grid");
     try {
-        const res = await fetch("/api/videos");
+        const res = await fetch(`/api/videos?_t=${Date.now()}`, {
+            cache: "no-store",
+            headers: {
+                "Pragma": "no-cache",
+                "Cache-Control": "no-cache"
+            }
+        });
         if (!res.ok) return;
         
         const videos = await res.json();

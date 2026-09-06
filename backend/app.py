@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -342,7 +342,14 @@ async def list_videos():
         videos.sort(key=lambda x: x["created_at"], reverse=True)
     except Exception as e:
         logger.error(f"Lỗi quét thư mục video: {e}")
-    return videos
+    return JSONResponse(
+        content=videos,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @app.delete("/api/videos/{filename}")
 async def delete_video(filename: str):
