@@ -246,71 +246,8 @@ class GeminiBot:
 
     async def _upload_image_in_video_mode(self, image_paths: list[Path]) -> bool:
         """Tải tệp ảnh lên chuyên biệt cho giao diện 'Tạo video' của Gemini."""
-        if not self.page or self.page.is_closed():
-            return False
-
-        str_paths = [str(p.resolve()) for p in image_paths if p.exists()]
-        if not str_paths:
-            logger.warning("Không có đường dẫn tệp ảnh hợp lệ để tải lên.")
-            return False
-
-        logger.info(f"Đang tiến hành tải {len(str_paths)} ảnh lên giao diện Tạo Video...")
-        page = self.page
-
-        for sel in IMAGE_BUTTON_SELECTORS:
-            try:
-                btn = page.locator(sel).locator("visible=true").first
-                if await btn.is_visible(timeout=800):
-                    logger.info(f"Phát hiện nút ảnh 🖼️ bằng selector: {sel}")
-                    try:
-                        async with page.expect_file_chooser(timeout=3500) as fc_info:
-                            await btn.click(force=True)
-                        file_chooser = await fc_info.value
-                        await file_chooser.set_files(str_paths)
-                        logger.info("⚡ Đã chọn tệp ảnh thành công qua file_chooser!")
-                        await asyncio.sleep(1)
-                        return True
-                    except Exception as fc_err:
-                        logger.debug(f"Click nút {sel} không kích hoạt file chooser ({fc_err}), tiếp tục thử...")
-            except Exception:
-                pass
-
-        try:
-            plus_btn = page.locator(PLUS_BUTTON_SELECTOR).locator("visible=true").first
-            if await plus_btn.is_visible(timeout=1000):
-                async with page.expect_file_chooser(timeout=3500) as fc_info:
-                    await plus_btn.click(force=True)
-                file_chooser = await fc_info.value
-                await file_chooser.set_files(str_paths)
-                logger.info("⚡ Đã nạp tệp ảnh qua nút Plus (+).")
-                await asyncio.sleep(1)
-                return True
-        except Exception as e:
-            logger.debug(f"Nạp qua Plus button không kích hoạt file chooser: {e}")
-
-        try:
-            file_inputs = page.locator("input[type='file']")
-            count = await file_inputs.count()
-            if count > 0:
-                await file_inputs.first.set_input_files(str_paths)
-                logger.info(f"⚡ Đã nạp tệp ảnh qua thẻ input[type='file'] (Tìm thấy {count} thẻ input).")
-                await asyncio.sleep(1)
-                return True
-        except Exception as e:
-            logger.warning(f"Lỗi nạp file trực tiếp qua input[type='file']: {e}")
-
-        try:
-            async with page.expect_file_chooser(timeout=3000) as fc_info:
-                await page.evaluate("() => { const inp = document.querySelector(\"input[type='file']\"); if (inp) inp.click(); }")
-            file_chooser = await fc_info.value
-            await file_chooser.set_files(str_paths)
-            logger.info("⚡ Đã nạp tệp ảnh bằng JS trigger input.click().")
-            await asyncio.sleep(1)
-            return True
-        except Exception as js_err:
-            logger.debug(f"JS trigger input.click() thất bại: {js_err}")
-
         return await self._upload_images_to_page(image_paths)
+
 
     async def _is_image_attached_in_dom(self) -> bool:
         """Kiểm tra xem thẻ preview hoặc thumbnail ảnh đã thực sự xuất hiện trong ô nhập Gemini chưa."""
@@ -561,6 +498,8 @@ class GeminiBot:
                 caption=final_caption,
                 hashtags=final_hashtags
             )
+            # CHUYỂN BIẾN PROMPT THÀNH PROMPT TẠO VIDEO THỰC SỰ
+            prompt = optimized_prompt
             logger.info(f"✅ ĐÃ XÁC THỰC VÀ LƯU CHẮC CHẮN CAPTION, HASHTAGS & OVERLAY VÀO TASK: Caption='{final_caption[:50]}...', Hashtags='{final_hashtags}'")
             
             logger.info("Làm sạch khung chat và bắt đầu bước tạo video...")
@@ -694,12 +633,30 @@ class GeminiBot:
         
         if not await prompt_input.is_visible():
             raise Exception("Không tìm thấy ô nhập mô tả video trên giao diện.")
+
+        # ĐẢM BẢO 100% CHỈ GỬI PROMPT TẠO VIDEO THỰC SỰ (Visual Prompt), TUYỆT ĐỐI KHÔNG GỬI CÂU LỆNH META-PROMPT!
+        video_prompt = task.get("optimized_prompt") or prompt
+        if "CHỈ TRẢ VỀ TEXT" in video_prompt or "Bạn là một chuyên gia Prompt" in video_prompt or "MÔ TẢ SẢN PHẨM CỦA TÔI" in video_prompt:
+            logger.warning("⚠️ Phát hiện câu lệnh Meta-Prompt bị truyền nhầm vào bước tạo video! Đang bóc tách prompt video thuần túy...")
+            parsed = parse_prompt_response(video_prompt)
+            video_prompt = parsed.get("prompt", "").strip()
+            if not video_prompt:
+                desc = task.get('user_description', 'sản phẩm chất lượng cao')
+                clean_desc = re.sub(r'https?://\S+', '', desc).strip().split('\n')[0][:100]
+                video_prompt = f"Video quảng cáo điện ảnh 4K sinh động lột tả chi tiết sản phẩm {clean_desc}, ánh sáng thương mại chuyên nghiệp, góc quay cận cảnh mượt mà."
+            task["optimized_prompt"] = video_prompt
+            update_task_fn(task, optimized_prompt=video_prompt)
             
+        logger.info(f"✨ Chuẩn bị gửi Prompt tạo video vào ô nhập: '{video_prompt[:80]}...'")
         await prompt_input.focus()
-        await prompt_input.fill(prompt)
+        await prompt_input.fill(video_prompt)
         await asyncio.sleep(1)
         
-        await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90, image_paths=image_paths)
+        submitted = await self._wait_and_submit_prompt(prompt_input, timeout_seconds=90, image_paths=image_paths)
+        if not submitted:
+            logger.error("❌ Không thể submit prompt và ảnh vào ô tạo video của Gemini!")
+            raise Exception("Không thể gửi prompt tạo video vào giao diện Gemini (chưa nạp được ảnh hoặc nút Send không kích hoạt).")
+
         logger.info("Đã gửi prompt lên Gemini. Đang chờ render video...")
         
         initial_video_count = await self.page.locator(VIDEO_PLAYER_SELECTOR).count()

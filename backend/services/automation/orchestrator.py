@@ -404,16 +404,21 @@ class AutomationManager:
                 caption = opt_res.get("caption", "")
                 hashtags = opt_res.get("hashtags", "")
                 api_error = opt_res.get("api_error", False)
+                is_meta = opt_res.get("is_meta", False)
             else:
                 optimized = str(opt_res)
                 voiceover = ""
                 overlay_text = []
                 caption = ""
                 hashtags = ""
+                is_meta = False
+
+            # NẾU LÀ META-PROMPT (chờ gửi vào Chat Gemini để sinh prompt thật), không gán nó làm visual prompt của task
+            task_opt_prompt = "" if is_meta else optimized
 
             self.update_task(
                 task,
-                optimized_prompt=optimized,
+                optimized_prompt=task_opt_prompt,
                 voiceover=voiceover,
                 overlay_text=overlay_text,
                 caption=caption,
@@ -451,7 +456,7 @@ class AutomationManager:
                 clip_path = temp_dir / f"clip_{cycle}.mp4"
                 
                 if cycle == 0:
-                    prompt_to_send = task["optimized_prompt"]
+                    prompt_to_send = task.get("optimized_prompt") or optimized
                 else:
                     prompt_to_send = (
                         f"Please continue the animation of this scene based on this original narrative: '{task['optimized_prompt']}'. "
