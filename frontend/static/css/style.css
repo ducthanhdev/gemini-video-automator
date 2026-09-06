@@ -83,16 +83,52 @@ body {
 .brand {
     display: flex;
     align-items: center;
+    gap: 14px;
 }
 
-.brand h1 {
-    font-size: 1.35rem;
-    font-weight: 700;
+.brand-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    object-fit: cover;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.brand:hover .brand-logo {
+    transform: scale(1.05);
+    box-shadow: 0 0 22px rgba(129, 140, 248, 0.5);
+}
+
+.brand-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.brand-text h1 {
+    font-size: 1.4rem;
+    font-weight: 800;
     letter-spacing: -0.5px;
-    color: var(--text-primary); /* Không dùng gradient màu mè */
+    line-height: 1.2;
+    color: var(--text-primary);
 }
 
-/* Loại bỏ chấm sáng màu mè */
+.brand-text h1 span {
+    background: linear-gradient(135deg, #38bdf8 0%, #818cf8 60%, #c084fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+}
+
+.brand-tagline {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
 .logo-glow {
     display: none;
 }

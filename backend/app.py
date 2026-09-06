@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     await manager.shutdown()
     logger.info("FastAPI Backend shutdown completed.")
 
-app = FastAPI(title="Gemini Video Batch Generator", lifespan=lifespan)
+app = FastAPI(title="VeoFlow AI - Batch Video Generator", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")

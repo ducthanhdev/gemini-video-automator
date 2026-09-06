@@ -54,13 +54,13 @@ if __name__ == "__main__":
     network_url = f"http://{network_ip}:{PORT}"
     
     print("\n" + "="*70)
-    print("🚀 MÁY CHỦ BATCH VIDEO GEMINI ĐÃ SẴN SÀNG KHỞI CHẠY!")
+    print("🚀 MÁY CHỦ VEOFLOW AI ĐÃ SẴN SÀNG KHỞI CHẠY!")
     print(f"   - Truy cập Desktop: {local_url}")
     print(f"   - Kết nối Wi-Fi Điện thoại: {network_url}")
     print("="*70 + "\n")
     
     webview.create_window(
-        title="Gemini Advanced Video Automator",
+        title="VeoFlow AI - Advanced Video Automator",
         url=local_url,
         width=1280,
         height=850,
