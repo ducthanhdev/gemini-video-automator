@@ -643,18 +643,32 @@ function updateQueueList(queue, currentTaskId) {
 // 10. TẢI VÀ HIỂN THỊ THƯ VIỆN VIDEO
 async function loadVideos() {
     const grid = document.getElementById("video-grid");
+    const btnRefresh = document.getElementById("btn-refresh-videos");
+    if (btnRefresh) {
+        btnRefresh.innerHTML = "⏳ Đang tải...";
+        btnRefresh.disabled = true;
+    }
+    
     try {
-        const res = await fetch(`/api/videos?_t=${Date.now()}`, {
+        const timestamp = Date.now();
+        const res = await fetch(`/api/videos?_t=${timestamp}`, {
+            method: "GET",
             cache: "no-store",
             headers: {
                 "Pragma": "no-cache",
                 "Cache-Control": "no-cache"
             }
         });
-        if (!res.ok) return;
+        
+        if (!res.ok) {
+            console.error("[VeoFlow] Lỗi API videos:", res.status);
+            return;
+        }
         
         const videos = await res.json();
-        if (videos.length === 0) {
+        console.log(`[VeoFlow] Đã tải ${videos ? videos.length : 0} video từ ổ cứng.`);
+        
+        if (!Array.isArray(videos) || videos.length === 0) {
             grid.innerHTML = '<div class="empty-state">Chưa có video nào được tạo thành công.</div>';
             updateSelectedVideosCount();
             return;
@@ -723,6 +737,11 @@ async function loadVideos() {
         updateSelectedVideosCount();
     } catch (e) {
         console.error("Lỗi nạp thư viện video:", e);
+    } finally {
+        if (btnRefresh) {
+            btnRefresh.innerHTML = "🔄 Làm mới";
+            btnRefresh.disabled = false;
+        }
     }
 }
 

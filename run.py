@@ -70,8 +70,10 @@ if __name__ == "__main__":
         background_color="#080c14"
     )
     
+    webview.settings['OPEN_DEVTOOLS_IN_DEBUG'] = True
+    
     try:
-        webview.start()
+        webview.start(debug=True)
     except Exception as e:
         print(f"\n⚠️ Cảnh báo: Không thể khởi động giao diện Desktop (PyWebview): {e}")
         print("🌐 Đang tự động mở ứng dụng trên trình duyệt web mặc định của bạn...")

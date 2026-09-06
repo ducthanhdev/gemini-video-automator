@@ -7,7 +7,7 @@
     <title>VeoFlow AI - Batch Video Creation & Viral Automation Studio</title>
     <link rel="icon" type="image/png" href="/static/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.4">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ cache_bust or '3.0' }}">
     <!-- Thư viện tạo mã QR offline -->
     <script src="/static/js/qrcode.min.js?v=1.3"></script>
 </head>
@@ -349,7 +349,15 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=2.4"></script>
+    <script src="/static/js/app.js?v={{ cache_bust or '3.0' }}"></script>
+    <script>
+        // Đảm bảo thư viện video luôn được gọi tải ngay khi toàn bộ trang hoàn tất
+        window.addEventListener("load", () => {
+            if (typeof loadVideos === "function") {
+                loadVideos();
+            }
+        });
+    </script>
 </body>
 
 </html>
