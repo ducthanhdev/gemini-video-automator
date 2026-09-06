@@ -14,6 +14,7 @@ from backend.config import UPLOAD_DIR, OUTPUT_DIR, CLIP_DURATION
 from backend.services import video_processor
 from backend.services.prompt_optimizer import optimize_prompt, parse_prompt_response, ensure_caption_and_hashtags
 from backend.services.voiceover import process_video_voiceover
+from backend.services.video_qc import validate_clip, validate_final_video
 
 from backend.services.automation.task_queue import TaskQueueManager
 from backend.services.automation.browser_driver import BrowserDriver
@@ -103,11 +104,12 @@ class AutomationManager:
     def _load_queue(self): self.queue_mgr._load_queue()
     def _save_queue(self): self.queue_mgr._save_queue()
     def update_task(self, task: dict[str, Any], **kwargs): self.queue_mgr.update_task(task, **kwargs)
-    def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16"):
-        return self.queue_mgr.add_task(image_filenames, user_description, duration, ratio)
+    def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16", voice_gender: str | None = None):
+        return self.queue_mgr.add_task(image_filenames, user_description, duration, ratio, voice_gender=voice_gender)
     def get_task(self, task_id: str): return self.queue_mgr.get_task(task_id)
-    def edit_task(self, task_id: str, user_description: str, duration: int, ratio: str):
-        return self.queue_mgr.edit_task(task_id, user_description, duration, ratio, current_task_id=self.current_task_id)
+    def edit_task(self, task_id: str, user_description: str, duration: int, ratio: str, voice_gender: str | None = None, current_task_id: str | None = None):
+        c_id = current_task_id or self.current_task_id
+        return self.queue_mgr.edit_task(task_id, user_description, duration, ratio, voice_gender=voice_gender, current_task_id=c_id)
 
     # Forwarding Driver Methods
     async def initialize(self):
@@ -378,6 +380,7 @@ class AutomationManager:
             logger.info(f"Nhiệm vụ {task['id']} đã có sẵn prompt tối ưu & caption. Bỏ qua bước tối ưu lại, tiến hành tạo video ngay...")
             optimized = task["optimized_prompt"]
             voiceover = task.get("voiceover", "")
+            overlay_text = task.get("overlay_text", [])
             caption = task.get("caption", "")
             hashtags = task.get("hashtags", "")
             api_error = False
@@ -396,16 +399,26 @@ class AutomationManager:
             if isinstance(opt_res, dict):
                 optimized = opt_res.get("prompt", "")
                 voiceover = opt_res.get("voiceover", "")
+                overlay_text = opt_res.get("overlay_text", [])
                 caption = opt_res.get("caption", "")
                 hashtags = opt_res.get("hashtags", "")
                 api_error = opt_res.get("api_error", False)
             else:
                 optimized = str(opt_res)
                 voiceover = ""
+                overlay_text = []
                 caption = ""
                 hashtags = ""
 
-            self.update_task(task, optimized_prompt=optimized, voiceover=voiceover, caption=caption, hashtags=hashtags, progress=10)
+            self.update_task(
+                task,
+                optimized_prompt=optimized,
+                voiceover=voiceover,
+                overlay_text=overlay_text,
+                caption=caption,
+                hashtags=hashtags,
+                progress=10
+            )
 
         num_cycles = max(1, task["duration"] // CLIP_DURATION)
         logger.info(f"Nhiệm vụ {task['id']} yêu cầu thời lượng {task['duration']}s. CLIP_DURATION = {CLIP_DURATION}s. Số lượng clip cần sinh: {num_cycles}")
@@ -449,9 +462,17 @@ class AutomationManager:
                     cycle_images, prompt_to_send, clip_path, task,
                     cycle=cycle, num_cycles=num_cycles, api_error=api_error
                 )
+
+                # KIỂM ĐỊNH KỸ THUẬT (Technical QC) CHO CLIP VỪA TẢI VỀ
+                clip_valid, clip_reason, clip_info = validate_clip(clip_path)
+                if not clip_valid:
+                    logger.error(f"❌ Clip {cycle + 1}/{num_cycles} không đạt Technical QC: {clip_reason}")
+                    raise Exception(f"Clip {cycle + 1} không đạt Technical QC: {clip_reason}")
+                logger.info(f"✅ Clip {cycle + 1}/{num_cycles} đạt Technical QC ({clip_info.get('duration')}s, {clip_info.get('width')}x{clip_info.get('height')})")
+
                 generated_clips.append(clip_path)
 
-            self.update_task(task, status="stitching videos", progress=88)
+            self.update_task(task, status="stitching videos", progress=85)
             
             output_filename = f"video_{task['id']}.mp4"
             final_output_path = OUTPUT_DIR / output_filename
@@ -471,37 +492,67 @@ class AutomationManager:
                 if not success or not final_output_path.exists():
                     raise Exception("Lỗi khi ghép nối các đoạn video ngắn thành video tổng hợp.")
 
-            # 1. Đảm bảo toàn vẹn thông tin metadata (caption, hashtags, voiceover, prompt)
+            # 1. Đảm bảo toàn vẹn thông tin metadata (caption, hashtags, voiceover, overlay_text, prompt)
             ensured_meta = ensure_caption_and_hashtags({
                 "prompt": task.get("optimized_prompt", ""),
                 "voiceover": task.get("voiceover", ""),
+                "overlay_text": task.get("overlay_text", []),
                 "caption": task.get("caption", ""),
                 "hashtags": task.get("hashtags", "")
             }, task.get("user_description", ""))
 
             prompt_val = ensured_meta["prompt"]
             voiceover_val = ensured_meta["voiceover"]
+            overlay_text_val = ensured_meta.get("overlay_text", [])
             caption_val = ensured_meta["caption"]
             hashtags_val = ensured_meta["hashtags"]
 
             task["caption"] = caption_val
             task["hashtags"] = hashtags_val
             task["voiceover"] = voiceover_val
+            task["overlay_text"] = overlay_text_val
             task["optimized_prompt"] = prompt_val
 
-            # 2. Tự động lồng tiếng AI (EdgeTTS) và ghép âm thanh vào file video MP4
+            # 2. Tự động vẽ On-Screen Text Overlay (Phụ đề/Hook giật gân chuẩn TikTok)
+            if overlay_text_val and len(overlay_text_val) > 0:
+                self.update_task(task, status="applying on-screen text overlay", progress=90)
+                logger.info(f"Đang tiến hành vẽ {len(overlay_text_val)} câu text overlay lên video...")
+                overlay_success = await asyncio.to_thread(
+                    video_processor.apply_text_overlay, final_output_path, overlay_text_val, final_output_path
+                )
+                if overlay_success:
+                    logger.info("✨ Tự động vẽ On-Screen Text Overlay thành công!")
+                else:
+                    logger.warning("Vẽ Text Overlay chưa thành công, giữ nguyên video hiện tại.")
+
+            # 3. Tự động lồng tiếng AI (EdgeTTS) và ghép âm thanh vào file video MP4 (với Duration Control & Ducking)
             if getattr(self, "enable_voiceover", True):
                 if voiceover_val and voiceover_val.strip():
-                    self.update_task(task, status="generating AI voiceover audio", progress=93)
-                    logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {getattr(self, 'voice_gender', 'hoaimy')})... Text: '{voiceover_val[:50]}...'")
-                    voice_key = getattr(self, "voice_gender", "hoaimy")
-                    voice_success = await process_video_voiceover(final_output_path, voiceover_val, voice_key=voice_key)
+                    voice_key = task.get("voice_gender") or getattr(self, "voice_gender", "capcut_cogaighoatngon")
+                    logger.info(f"Đang tiến hành tự động lồng tiếng AI cho video (Giọng: {voice_key})... Text: '{voiceover_val[:50]}...'")
+                    voice_success = await process_video_voiceover(
+                        final_output_path,
+                        voiceover_val,
+                        voice_key=voice_key,
+                        target_duration=float(task.get("duration", 10))
+                    )
                     if voice_success:
                         logger.info("⚡ Tự động lồng tiếng AI và ghép âm thanh thành công!")
                     else:
                         logger.warning("Lồng tiếng AI không thành công, giữ nguyên video gốc.")
                 else:
                     logger.warning("Không có nội dung Kịch bản lồng tiếng để sinh âm thanh.")
+
+            # 4. Technical QC kiểm tra video hoàn thiện cuối cùng
+            final_valid, final_reason, final_qc_info = validate_final_video(
+                final_output_path,
+                expected_duration=float(task.get("duration", 10)),
+                has_audio=getattr(self, "enable_voiceover", False) and bool(voiceover_val)
+            )
+            if not final_valid:
+                logger.warning(f"⚠️ Cảnh báo Technical QC video hoàn thiện: {final_reason}")
+            else:
+                logger.info(f"🎉 Technical QC PASS cho video hoàn thiện: {final_qc_info.get('width')}x{final_qc_info.get('height')}, {final_qc_info.get('duration')}s, Audio: {final_qc_info.get('has_audio')}")
 
             meta_json_path = OUTPUT_DIR / f"video_{task['id']}.json"
             meta_txt_path = OUTPUT_DIR / f"video_{task['id']}.txt"
@@ -510,15 +561,24 @@ class AutomationManager:
                 "video_filename": output_filename,
                 "prompt": prompt_val,
                 "voiceover": voiceover_val,
+                "overlay_text": overlay_text_val,
                 "caption": caption_val,
                 "hashtags": hashtags_val,
+                "qc_info": final_qc_info,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
             with open(meta_json_path, "w", encoding="utf-8") as f:
                 json.dump(meta_data, f, ensure_ascii=False, indent=2)
                 
-            txt_content = f"--- KỊCH BẢN LỒNG TIẾNG ---\n{voiceover_val}\n\n--- BÀI ĐĂNG CAPTION ---\n{caption_val}\n\n--- HASHTAGS ---\n{hashtags_val}\n\n--- PROMPT VIDEO ---\n{prompt_val}"
+            txt_content = (
+                f"--- KỊCH BẢN LỒNG TIẾNG ---\n{voiceover_val}\n\n"
+                f"--- PHỤ ĐỀ / TEXT OVERLAY ---\n"
+                + "\n".join([f"[{item.get('start', 0)}s - {item.get('end', 0)}s]: {item.get('text', '')}" for item in overlay_text_val])
+                + f"\n\n--- BÀI ĐĂNG CAPTION ---\n{caption_val}\n\n"
+                f"--- HASHTAGS ---\n{hashtags_val}\n\n"
+                f"--- PROMPT VIDEO ---\n{prompt_val}"
+            )
             with open(meta_txt_path, "w", encoding="utf-8") as f:
                 f.write(txt_content)
 
@@ -530,6 +590,7 @@ class AutomationManager:
                 caption=caption_val,
                 hashtags=hashtags_val,
                 voiceover=voiceover_val,
+                overlay_text=overlay_text_val,
                 optimized_prompt=prompt_val
             )
             logger.info(f"Đã hoàn thành nhiệm vụ {task['id']}. Video kết quả: {final_output_path}")

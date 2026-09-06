@@ -32,7 +32,7 @@ class TaskQueueManager:
         self.long_video_mode: str = "last_frame"  # last_frame hoặc crossfade
         self.system_instruction: str = DEFAULT_SYSTEM_INSTRUCTION
         self.meta_prompt_template: str = DEFAULT_META_PROMPT_TEMPLATE
-        self.voice_gender: str = "hoaimy"  # hoaimy (nữ) hoặc namminh (nam)
+        self.voice_gender: str = "capcut_cogaighoatngon"  # capcut_cogaighoatngon, capcut_nhongotngao, capcut_thanhnientutin, hoaimy, namminh
         self.enable_voiceover: bool = True
         self.auto_retry_failed: bool = True  # Tự động lặp lại theo vòng cho đến khi tất cả task hoàn thành
 
@@ -51,7 +51,7 @@ class TaskQueueManager:
                 self.long_video_mode = data.get("long_video_mode", "last_frame")
                 self.system_instruction = data.get("system_instruction") or DEFAULT_SYSTEM_INSTRUCTION
                 self.meta_prompt_template = data.get("meta_prompt_template") or DEFAULT_META_PROMPT_TEMPLATE
-                self.voice_gender = data.get("voice_gender", "hoaimy")
+                self.voice_gender = data.get("voice_gender", "capcut_cogaighoatngon")
                 self.enable_voiceover = data.get("enable_voiceover", False)
                 self.auto_retry_failed = data.get("auto_retry_failed", True)
                 logger.info("Đã tải cấu hình cài đặt từ file settings.json.")
@@ -109,6 +109,7 @@ class TaskQueueManager:
                         "user_description": user_desc_short,
                         "optimized_prompt": meta_data.get("prompt", ""),
                         "voiceover": meta_data.get("voiceover", ""),
+                        "overlay_text": meta_data.get("overlay_text", []),
                         "caption": meta_data.get("caption", ""),
                         "hashtags": meta_data.get("hashtags", ""),
                         "duration": 10,
@@ -210,7 +211,7 @@ class TaskQueueManager:
             task[key] = val
         self._save_queue()
 
-    def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16") -> dict[str, Any]:
+    def add_task(self, image_filenames: list[str], user_description: str, duration: int, ratio: str = "9:16", voice_gender: str | None = None) -> dict[str, Any]:
         """Thêm một nhiệm vụ tạo video mới vào hàng đợi."""
         task_id = str(uuid.uuid4())
         task = {
@@ -218,8 +219,13 @@ class TaskQueueManager:
             "images": image_filenames,  # Tên file nằm trong storage/uploads
             "user_description": user_description,
             "optimized_prompt": "",
+            "voiceover": "",
+            "overlay_text": [],
+            "caption": "",
+            "hashtags": "",
             "duration": duration,
             "ratio": ratio,
+            "voice_gender": voice_gender or self.voice_gender,
             "status": "pending",
             "progress": 0,
             "retry_count": 0,
@@ -228,7 +234,7 @@ class TaskQueueManager:
         }
         self.queue.append(task)
         self._save_queue()
-        logger.info(f"Đã thêm nhiệm vụ {task_id} vào hàng đợi. Tổng nhiệm vụ: {len(self.queue)}")
+        logger.info(f"Đã thêm nhiệm vụ {task_id} vào hàng đợi (Giọng: {task['voice_gender']}). Tổng nhiệm vụ: {len(self.queue)}")
         return task
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
@@ -238,7 +244,7 @@ class TaskQueueManager:
                 return t
         return None
 
-    def edit_task(self, task_id: str, user_description: str, duration: int, ratio: str, current_task_id: str | None = None) -> bool:
+    def edit_task(self, task_id: str, user_description: str, duration: int, ratio: str, voice_gender: str | None = None, current_task_id: str | None = None) -> bool:
         """Chỉnh sửa thông tin nhiệm vụ khi còn ở trạng thái pending hoặc failed."""
         task = self.get_task(task_id)
         if not task:
@@ -251,6 +257,8 @@ class TaskQueueManager:
         task["user_description"] = user_description
         task["duration"] = duration
         task["ratio"] = ratio
+        if voice_gender:
+            task["voice_gender"] = voice_gender
         self._save_queue()
         logger.info(f"Đã cập nhật thông tin nhiệm vụ {task_id}.")
         return True

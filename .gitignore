@@ -20,6 +20,8 @@ storage/uploads/*
 storage/outputs/*
 !storage/outputs/.gitkeep
 storage/browser_profile/
+storage/previews/
+storage/*.mp3
 storage/queue.json
 storage/queue.json.bak
 storage/*.tmp
@@ -28,6 +30,7 @@ storage/settings.json
 # Logs & Environment
 *.log
 .env
+scratch/
 
 # IDE / System
 .vscode/

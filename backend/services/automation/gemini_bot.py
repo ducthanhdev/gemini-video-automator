@@ -547,21 +547,21 @@ class GeminiBot:
                 optimized_prompt = f"Video quảng cáo điện ảnh 4K sinh động lột tả chi tiết sản phẩm {clean_desc}, ánh sáng thương mại chuyên nghiệp, góc quay cận cảnh mượt mà."
                 
             logger.info(f"Đã nhận prompt tối ưu từ Chat: {optimized_prompt}")
-            prompt = optimized_prompt
-            
             final_caption = ensured_dict.get("caption", "").strip()
             final_hashtags = ensured_dict.get("hashtags", "").strip()
             final_voiceover = ensured_dict.get("voiceover", "").strip()
+            final_overlay = ensured_dict.get("overlay_text", [])
             
             # CẬP NHẬT VÀ LƯU CHẮC CHẮN VÀO QUEUE TRƯỚC KHI CHUYỂN SANG BƯỚC TẠO VIDEO
             update_task_fn(
                 task,
                 optimized_prompt=optimized_prompt,
                 voiceover=final_voiceover,
+                overlay_text=final_overlay,
                 caption=final_caption,
                 hashtags=final_hashtags
             )
-            logger.info(f"✅ ĐÃ XÁC THỰC VÀ LƯU CHẮC CHẮN CAPTION & HASHTAGS VÀO TASK: Caption='{final_caption[:50]}...', Hashtags='{final_hashtags}'")
+            logger.info(f"✅ ĐÃ XÁC THỰC VÀ LƯU CHẮC CHẮN CAPTION, HASHTAGS & OVERLAY VÀO TASK: Caption='{final_caption[:50]}...', Hashtags='{final_hashtags}'")
             
             logger.info("Làm sạch khung chat và bắt đầu bước tạo video...")
             await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")

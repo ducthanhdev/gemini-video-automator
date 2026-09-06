@@ -3,7 +3,7 @@ import logging
 import json
 import uuid
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import asyncio
 from contextlib import asynccontextmanager
 
-from backend.config import UPLOAD_DIR, OUTPUT_DIR, PORT, STATIC_DIR, TEMPLATES_DIR
+from backend.config import UPLOAD_DIR, OUTPUT_DIR, PORT, STATIC_DIR, TEMPLATES_DIR, STORAGE_DIR
 from backend.services.automation import AutomationManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -33,6 +33,8 @@ app = FastAPI(title="Gemini Video Batch Generator", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+(STORAGE_DIR / "previews").mkdir(parents=True, exist_ok=True)
+app.mount("/storage/previews", StaticFiles(directory=str(STORAGE_DIR / "previews")), name="previews")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -54,7 +56,7 @@ class SettingsUpdate(BaseModel):
     long_video_mode: str
     system_instruction: str = ""
     meta_prompt_template: str = ""
-    voice_gender: str = "hoaimy"
+    voice_gender: str = "capcut_cogaighoatngon"
     enable_voiceover: bool = True
     auto_retry_failed: bool = True
 
@@ -63,11 +65,13 @@ class TaskCreate(BaseModel):
     user_description: str
     duration: int
     ratio: str = "9:16"
+    voice_gender: Optional[str] = "capcut_cogaighoatngon"
 
 class TaskUpdate(BaseModel):
     user_description: str
     duration: int
     ratio: str
+    voice_gender: Optional[str] = None
 
 class ParseUrlRequest(BaseModel):
     url: str
@@ -118,6 +122,27 @@ async def get_settings():
         "auto_retry_failed": manager.auto_retry_failed
     }
 
+@app.get("/api/voices")
+async def get_available_voices():
+    return [
+        {"id": "capcut_cogaighoatngon", "name": "Cô Gái Hoạt Ngôn (TikTok Bán Hàng Viral - Khuyên dùng)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_cogaighoatngon.mp3"},
+        {"id": "capcut_nhongotngao", "name": "Nhỏ Ngọt Ngào (Mỹ phẩm, Decor, Thời trang)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_nhongotngao.mp3"},
+        {"id": "capcut_thanhnientutin", "name": "Thanh Niên Tự Tin (Công nghệ, Đồ gia dụng)", "provider": "capcut", "gender": "male", "preview_url": "/static/previews/capcut_thanhnientutin.mp3"},
+        {"id": "capcut_nuphothong", "name": "Giọng Nữ Phổ Thông (Chị Google CapCut)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_nuphothong.mp3"},
+        {"id": "capcut_namtram", "name": "Giọng Nam Trầm (Điện ảnh, Uy tín)", "provider": "capcut", "gender": "male", "preview_url": "/static/previews/capcut_namtram.mp3"},
+        {"id": "capcut_reviewphim", "name": "Review Phim New (Lôi cuốn, Nhấn nhá)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_reviewphim.mp3"},
+        {"id": "capcut_banmai", "name": "Ban Mai (Tươi tắn, Năng lượng)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_banmai.mp3"},
+        {"id": "capcut_mai", "name": "Mai (Trầm lắng, Nhẹ nhàng)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_mai.mp3"},
+        {"id": "capcut_giongge", "name": "Giọng Bé (Đáng yêu, Hoạt hình)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_giongge.mp3"},
+        {"id": "capcut_vietmeo", "name": "Việt Méo (Hài hước, Meme)", "provider": "capcut", "gender": "male", "preview_url": "/static/previews/capcut_vietmeo.mp3"},
+        {"id": "capcut_bantin1", "name": "Bản Tin 1 (Thời sự, Trang trọng)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_bantin1.mp3"},
+        {"id": "capcut_sunnyidol", "name": "Sunny Idol (Thần tượng, Trẻ trung)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_sunnyidol.mp3"},
+        {"id": "capcut_gaimoilon", "name": "Gái Mới Lớn (Ngây thơ, Trong trẻo)", "provider": "capcut", "gender": "female", "preview_url": "/static/previews/capcut_gaimoilon.mp3"},
+        {"id": "capcut_robot", "name": "Robot VN (Công nghệ, Sci-Fi)", "provider": "capcut", "gender": "male", "preview_url": "/static/previews/capcut_robot.mp3"},
+        {"id": "hoaimy", "name": "Hoài Mỹ (Microsoft Edge Neural Nữ, Phóng sự)", "provider": "edge_tts", "gender": "female", "preview_url": "/static/previews/hoaimy.mp3"},
+        {"id": "namminh", "name": "Nam Minh (Microsoft Edge Neural Nam, Trầm ấm)", "provider": "edge_tts", "gender": "male", "preview_url": "/static/previews/namminh.mp3"}
+    ]
+
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     saved_filenames = []
@@ -165,7 +190,13 @@ async def create_task(task_data: TaskCreate):
     created_tasks = []
     for filename in task_data.images:
         # Mỗi bức ảnh sẽ trở thành 1 nhiệm vụ riêng biệt trong hàng đợi
-        task = manager.add_task([filename], task_data.user_description, task_data.duration, task_data.ratio)
+        task = manager.add_task(
+            [filename],
+            task_data.user_description,
+            task_data.duration,
+            task_data.ratio,
+            voice_gender=task_data.voice_gender
+        )
         created_tasks.append(task)
         
     return {"status": "success", "tasks": created_tasks, "task": created_tasks[0]}
@@ -195,7 +226,9 @@ async def edit_task(task_id: str, task_update: TaskUpdate):
         task_id,
         task_update.user_description,
         task_update.duration,
-        task_update.ratio
+        task_update.ratio,
+        voice_gender=task_update.voice_gender,
+        current_task_id=manager.current_task_id
     )
     if not success:
         raise HTTPException(status_code=400, detail="Không thể chỉnh sửa nhiệm vụ này (có thể do đang hoạt động).")
@@ -291,6 +324,9 @@ async def list_videos():
                 except Exception:
                     pass
 
+            overlay_text = meta_data.get("overlay_text", [])
+            qc_info = meta_data.get("qc_info", {})
+
             videos.append({
                 "filename": p.name,
                 "size": stat.st_size,
@@ -298,7 +334,10 @@ async def list_videos():
                 "url": f"/outputs/{p.name}",
                 "caption": caption,
                 "hashtags": hashtags,
-                "prompt": prompt
+                "prompt": prompt,
+                "voiceover": voiceover,
+                "overlay_text": overlay_text,
+                "qc_info": qc_info
             })
         videos.sort(key=lambda x: x["created_at"], reverse=True)
     except Exception as e:

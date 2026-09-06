@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initProductUrlParser();
     initActionButtons();
     initTaskCreation();
+    initVoicePreview();
     initLayoutResizer();
     initVideoModal();
     
@@ -51,7 +52,10 @@ async function initSettings() {
             if (enableVoElem) enableVoElem.value = data.enable_voiceover !== undefined ? String(data.enable_voiceover) : "true";
             
             const voiceGenderElem = document.getElementById("voice-gender");
-            if (voiceGenderElem) voiceGenderElem.value = data.voice_gender || "hoaimy";
+            if (voiceGenderElem) voiceGenderElem.value = data.voice_gender || "capcut_cogaighoatngon";
+
+            const createVoiceElem = document.getElementById("create-voice-gender");
+            if (createVoiceElem) createVoiceElem.value = data.voice_gender || "capcut_cogaighoatngon";
 
             const autoRetryElem = document.getElementById("auto-retry-failed");
             if (autoRetryElem) autoRetryElem.value = data.auto_retry_failed !== undefined ? String(data.auto_retry_failed) : "true";
@@ -314,6 +318,7 @@ function initTaskCreation() {
     const durationSelect = document.getElementById("video-duration");
     const ratioSelect = document.getElementById("video-ratio");
     const btnCreate = document.getElementById("btn-create-task");
+    const voiceSelect = document.getElementById("create-voice-gender");
 
     descInput.addEventListener("input", validateForm);
 
@@ -321,6 +326,7 @@ function initTaskCreation() {
         const desc = descInput.value.trim();
         const duration = parseInt(durationSelect.value);
         const ratio = ratioSelect.value;
+        const voiceGender = voiceSelect ? voiceSelect.value : "capcut_cogaighoatngon";
 
         if (uploadedFiles.length === 0 || !desc) return;
 
@@ -337,7 +343,8 @@ function initTaskCreation() {
                     images: uploadedFiles,
                     user_description: desc,
                     duration: duration,
-                    ratio: ratio
+                    ratio: ratio,
+                    voice_gender: voiceGender
                 })
             });
 
@@ -360,6 +367,60 @@ function initTaskCreation() {
             btnCreate.removeAttribute("disabled");
         } finally {
             btnCreate.innerText = originalText;
+        }
+    });
+}
+
+// 5.1. NGHE THỬ GIỌNG ĐỌC AI MẪU
+function initVoicePreview() {
+    const btnPreview = document.getElementById("btn-preview-voice");
+    const audioPreview = document.getElementById("audio-voice-preview");
+    const voiceSelect = document.getElementById("create-voice-gender");
+    const previewIcon = document.getElementById("preview-voice-icon");
+    const previewText = document.getElementById("preview-voice-text");
+
+    if (!btnPreview || !audioPreview || !voiceSelect) return;
+
+    function resetPreviewButton() {
+        if (previewIcon) previewIcon.innerText = "▶️";
+        if (previewText) previewText.innerText = "Nghe thử giọng";
+        btnPreview.style.background = "rgba(99, 102, 241, 0.2)";
+        btnPreview.style.borderColor = "#6366f1";
+    }
+
+    btnPreview.addEventListener("click", () => {
+        if (!audioPreview.paused && audioPreview.currentTime > 0) {
+            audioPreview.pause();
+            audioPreview.currentTime = 0;
+            resetPreviewButton();
+            return;
+        }
+
+        const voiceId = voiceSelect.value || "capcut_cogaighoatngon";
+        const previewUrl = `/static/previews/${voiceId}.mp3`;
+
+        audioPreview.src = previewUrl;
+        audioPreview.play().then(() => {
+            if (previewIcon) previewIcon.innerText = "⏹️";
+            if (previewText) previewText.innerText = "Đang phát... (Dừng)";
+            btnPreview.style.background = "rgba(239, 68, 68, 0.25)";
+            btnPreview.style.borderColor = "#ef4444";
+        }).catch(err => {
+            console.warn("Không thể phát audio preview:", err);
+            resetPreviewButton();
+            showToast("Chưa có file mẫu cho giọng này.", "warning");
+        });
+    });
+
+    audioPreview.addEventListener("ended", resetPreviewButton);
+    audioPreview.addEventListener("pause", resetPreviewButton);
+
+    // Khi người dùng đổi giọng trong dropdown thì dừng phát giọng cũ
+    voiceSelect.addEventListener("change", () => {
+        if (!audioPreview.paused) {
+            audioPreview.pause();
+            audioPreview.currentTime = 0;
+            resetPreviewButton();
         }
     });
 }
@@ -499,14 +560,27 @@ function updateQueueList(queue, currentTaskId) {
             </div>
         `;
 
+        const voiceLabels = {
+            "capcut_cogaighoatngon": "Cô Gái Hoạt Ngôn",
+            "capcut_nhongotngao": "Nhỏ Ngọt Ngào",
+            "capcut_thanhnientutin": "Thanh Niên Tự Tin",
+            "capcut_nuphothong": "Nữ Phổ Thông",
+            "capcut_namtram": "Nam Trầm",
+            "capcut_reviewphim": "Review Phim",
+            "hoaimy": "Hoài Mỹ (Edge)",
+            "namminh": "Nam Minh (Edge)"
+        };
+        const voiceText = voiceLabels[task.voice_gender] || task.voice_gender || "Cô Gái Hoạt Ngôn";
+
         html += `
             <div class="queue-item ${activeClass} ${task.status}">
                 <div class="queue-item-header">
-                    <span class="task-id">ID: ${task.id.substring(0, 8)}... (${task.duration}s | ${task.ratio || '9:16'})${task.retry_count ? ` <span class="badge-retry" style="margin-left:6px; font-size:0.75rem; background:rgba(245, 158, 11, 0.18); color:#f59e0b; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(245, 158, 11, 0.35);">🔄 Lần thử ${task.retry_count + 1}</span>` : ''}</span>
+                    <span class="task-id">ID: ${task.id.substring(0, 8)}... (${task.duration}s | ${task.ratio || '9:16'}) <span class="badge-voice" style="margin-left:4px; font-size:0.75rem; background:rgba(99, 102, 241, 0.15); color:#818cf8; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(99, 102, 241, 0.3);">🎙️ ${voiceText}</span>${task.retry_count ? ` <span class="badge-retry" style="margin-left:6px; font-size:0.75rem; background:rgba(245, 158, 11, 0.18); color:#f59e0b; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(245, 158, 11, 0.35);">🔄 Lần thử ${task.retry_count + 1}</span>` : ''}</span>
                     <span class="task-status ${task.status}">${task.status.toUpperCase()}</span>
                 </div>
                 <div class="task-desc">${task.user_description}</div>
                 ${task.optimized_prompt ? `<div class="task-prompt-box" style="margin-top:6px; font-size:0.8rem; color:#94a3b8; background:rgba(15,23,42,0.6); padding:6px 10px; border-radius:6px; border-left:3px solid #6366f1;"><strong>🎬 Visual Prompt:</strong> ${task.optimized_prompt}</div>` : ''}
+                ${task.overlay_text && task.overlay_text.length ? `<div class="task-overlay-box" style="margin-top:6px; font-size:0.8rem; color:#fde047; background:rgba(234,179,8,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #eab308;"><strong>💬 On-Screen Text:</strong> ${task.overlay_text.map(o => `[${o.start}s-${o.end}s: ${o.text}]`).join(' | ')}</div>` : ''}
                 ${task.voiceover ? `<div class="task-voiceover-box" style="margin-top:6px; font-size:0.8rem; color:#a7f3d0; background:rgba(16,185,129,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #10b981;"><strong>🎙️ Kịch bản lồng tiếng:</strong> ${task.voiceover}</div>` : ''}
                 <div class="progress-container">
                     <div class="progress-bar" style="width: ${progressPercent}%"></div>
@@ -737,6 +811,10 @@ function openVideoModal(videoData) {
             btnCopyAll.onclick = () => {
                 const parts = [];
                 if (videoData.voiceover) parts.push(`🎙️ KỊCH BẢN LỒNG TIẾNG:\n${videoData.voiceover}`);
+                if (videoData.overlay_text && videoData.overlay_text.length) {
+                    const ol = videoData.overlay_text.map(o => `[${o.start}s - ${o.end}s]: ${o.text}`).join('\n');
+                    parts.push(`💬 PHỤ ĐỀ / ON-SCREEN TEXT:\n${ol}`);
+                }
                 if (videoData.caption) parts.push(`📝 CAPTION:\n${videoData.caption}`);
                 if (videoData.hashtags) parts.push(`🏷️ HASHTAGS:\n${videoData.hashtags}`);
                 const fullCopy = parts.join('\n\n').trim();
@@ -1027,6 +1105,21 @@ window.editTaskPrompt = async (taskId) => {
         alert("Tỷ lệ không hợp lệ (chỉ chấp nhận 9:16 hoặc 16:9)!");
         return;
     }
+
+    const currentVoice = task.voice_gender || "capcut_cogaighoatngon";
+    const voicePromptText = `Chọn giọng đọc AI:\n` +
+        `1. capcut_cogaighoatngon (Cô Gái Hoạt Ngôn - Viral)\n` +
+        `2. capcut_nhongotngao (Nhỏ Ngọt Ngào - Mỹ phẩm, Decor)\n` +
+        `3. capcut_thanhnientutin (Thanh Niên Tự Tin - Công nghệ)\n` +
+        `4. capcut_nuphothong (Nữ Phổ Thông - Google CapCut)\n` +
+        `5. capcut_namtram (Nam Trầm Điện Ảnh)\n` +
+        `6. capcut_reviewphim (Review Phim New)\n` +
+        `7. hoaimy (Nữ Hoài Mỹ - Edge-TTS)\n` +
+        `8. namminh (Nam Nam Minh - Edge-TTS)\n\n` +
+        `Nhập mã giọng đọc:`;
+    const newVoiceInput = prompt(voicePromptText, currentVoice);
+    if (newVoiceInput === null) return;
+    const newVoice = newVoiceInput.trim() || currentVoice;
     
     try {
         const res = await fetch(`/api/tasks/${taskId}`, {
@@ -1035,7 +1128,8 @@ window.editTaskPrompt = async (taskId) => {
             body: JSON.stringify({
                 user_description: trimmedDesc,
                 duration: newDuration,
-                ratio: newRatio
+                ratio: newRatio,
+                voice_gender: newVoice
             })
         });
         if (res.ok) {

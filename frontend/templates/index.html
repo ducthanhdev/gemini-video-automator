@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Video Batch Automator</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=1.8">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.2">
     <!-- Thư viện tạo mã QR offline -->
     <script src="/static/js/qrcode.min.js?v=1.3"></script>
 </head>
@@ -63,6 +63,41 @@
                         <label for="user-description">Mô tả nội dung / Chuyển động (Tiếng Việt)</label>
                         <textarea id="user-description" rows="3"
                             placeholder="Ví dụ: Một người đàn ông đi bộ trong rừng mưa nhiệt đới đầy sương mù, camera zoom nhẹ vào cận cảnh khuôn mặt..."></textarea>
+                    </div>
+
+                    <!-- Phần chọn Giọng đọc AI Bán hàng kèm Nút nghe thử trực tiếp -->
+                    <div class="form-group voice-selection-box" style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 10px 12px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label for="create-voice-gender" style="margin-bottom: 0; font-weight: 600; color: #818cf8; display: flex; align-items: center; gap: 6px;">
+                                <span>🎙️ Giọng đọc AI Bán Hàng:</span>
+                            </label>
+                            <button type="button" id="btn-preview-voice" class="btn btn-secondary btn-sm" style="padding: 3px 10px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.2); border: 1px solid #6366f1; color: #a5b4fc; cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Bấm để nghe thử âm điệu giọng này">
+                                <span id="preview-voice-icon">▶️</span> <span id="preview-voice-text">Nghe thử giọng</span>
+                            </button>
+                        </div>
+                        <select id="create-voice-gender">
+                            <optgroup label="🔥 Giọng Bán Hàng & Đề Xuất TikTok/CapCut (Khuyên Dùng)">
+                                <option value="capcut_cogaighoatngon" selected>Cô Gái Hoạt Ngôn (TikTok Bán Hàng Viral, Chốt đơn cực đỉnh)</option>
+                                <option value="capcut_nhongotngao">Nhỏ Ngọt Ngào (Mỹ phẩm, Decor, Thời trang - Dễ thương)</option>
+                                <option value="capcut_thanhnientutin">Thanh Niên Tự Tin (Công nghệ, Đồ gia dụng - Sôi nổi)</option>
+                                <option value="capcut_nuphothong">Nữ Phổ Thông (Chị Google CapCut - Tự nhiên, rõ ràng)</option>
+                                <option value="capcut_namtram">Nam Trầm Điện Ảnh (Sang trọng, uy tín)</option>
+                                <option value="capcut_reviewphim">Review Phim New (Lôi cuốn, kịch tính)</option>
+                                <option value="capcut_banmai">Ban Mai (Tươi tắn, năng lượng)</option>
+                                <option value="capcut_mai">Mai (Trầm lắng, nhẹ nhàng)</option>
+                                <option value="capcut_giongge">Giọng Bé (Đáng yêu, hoạt hình)</option>
+                                <option value="capcut_vietmeo">Việt Méo (Hài hước, meme)</option>
+                                <option value="capcut_bantin1">Bản Tin 1 (Thời sự, trang trọng)</option>
+                                <option value="capcut_sunnyidol">Sunny Idol (Thần tượng, trẻ trung)</option>
+                                <option value="capcut_gaimoilon">Gái Mới Lớn (Ngây thơ, trong trẻo)</option>
+                                <option value="capcut_robot">Robot VN (Công nghệ, Sci-Fi)</option>
+                            </optgroup>
+                            <optgroup label="📻 Microsoft Edge Neural TTS (Tin tức)">
+                                <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, phóng sự)</option>
+                                <option value="namminh">Nam - Nam Minh (Trầm ấm, thời sự)</option>
+                            </optgroup>
+                        </select>
+                        <audio id="audio-voice-preview" preload="none" style="display: none;"></audio>
                     </div>
 
                     <div class="form-row align-end">
@@ -123,8 +158,26 @@
                         <div class="form-group half">
                             <label for="voice-gender">Giọng đọc AI Tiếng Việt</label>
                             <select id="voice-gender">
-                                <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, mượt mà)</option>
-                                <option value="namminh">Nam - Nam Minh (Trầm ấm, uy tín)</option>
+                                <optgroup label="🔥 Giọng Bán Hàng & Đề Xuất TikTok/CapCut (Khuyên Dùng)">
+                                    <option value="capcut_cogaighoatngon" selected>Cô Gái Hoạt Ngôn (TikTok Bán Hàng Viral, Chốt đơn cực đỉnh)</option>
+                                    <option value="capcut_nhongotngao">Nhỏ Ngọt Ngào (Mỹ phẩm, Decor, Thời trang - Dễ thương)</option>
+                                    <option value="capcut_thanhnientutin">Thanh Niên Tự Tin (Công nghệ, Đồ gia dụng - Sôi nổi)</option>
+                                    <option value="capcut_nuphothong">Nữ Phổ Thông (Chị Google CapCut - Tự nhiên, rõ ràng)</option>
+                                    <option value="capcut_namtram">Nam Trầm Điện Ảnh (Sang trọng, uy tín)</option>
+                                    <option value="capcut_reviewphim">Review Phim New (Lôi cuốn, kịch tính)</option>
+                                    <option value="capcut_banmai">Ban Mai (Tươi tắn, năng lượng)</option>
+                                    <option value="capcut_mai">Mai (Trầm lắng, nhẹ nhàng)</option>
+                                    <option value="capcut_giongge">Giọng Bé (Đáng yêu, hoạt hình)</option>
+                                    <option value="capcut_vietmeo">Việt Méo (Hài hước, meme)</option>
+                                    <option value="capcut_bantin1">Bản Tin 1 (Thời sự, trang trọng)</option>
+                                    <option value="capcut_sunnyidol">Sunny Idol (Thần tượng, trẻ trung)</option>
+                                    <option value="capcut_gaimoilon">Gái Mới Lớn (Ngây thơ, trong trẻo)</option>
+                                    <option value="capcut_robot">Robot VN (Công nghệ, Sci-Fi)</option>
+                                </optgroup>
+                                <optgroup label="📻 Microsoft Edge Neural TTS (Tin tức)">
+                                    <option value="hoaimy">Nữ - Hoài Mỹ (Truyền cảm, phóng sự)</option>
+                                    <option value="namminh">Nam - Nam Minh (Trầm ấm, thời sự)</option>
+                                </optgroup>
                             </select>
                         </div>
                     </div>
@@ -272,7 +325,7 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=1.8"></script>
+    <script src="/static/js/app.js?v=2.2"></script>
 </body>
 
 </html>

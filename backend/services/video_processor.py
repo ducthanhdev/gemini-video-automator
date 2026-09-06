@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,3 +142,112 @@ def concatenate_videos_xfade(video_paths: list[Path], output_path: Path, transit
     except Exception as e:
         logger.error(f"Lỗi không xác định khi ghép nối crossfade: {e}")
         return False
+
+def get_vietnamese_font_path() -> str:
+    """Tìm đường dẫn font chữ hỗ trợ đầy đủ tiếng Việt Unicode trên hệ thống."""
+    candidate_fonts = [
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"),
+        Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+    ]
+    for font in candidate_fonts:
+        if font.exists():
+            return str(font.resolve())
+    return "Sans"
+
+def apply_text_overlay(
+    video_path: Path,
+    overlay_items: list[dict[str, Any]],
+    output_path: Path
+) -> bool:
+    """
+    Vẽ phụ đề/hook nổi bật (On-Screen Text) lên video bằng FFmpeg drawtext filter:
+    - Tự động tìm font tiếng Việt Unicode
+    - Căn giữa màn hình, đặt ở vùng an toàn (Safe Zone) chuẩn TikTok/Shorts (y=28% chiều cao)
+    - Hiển thị theo từng mốc thời gian start -> end của kịch bản
+    - Kiểu dáng chuẩn TVC/TikTok: Chữ vàng/trắng tương phản viền đen, nền box bán trong suốt
+    """
+    if not video_path.exists():
+        logger.error(f"File video nguồn không tồn tại: {video_path}")
+        return False
+
+    if not overlay_items:
+        logger.info("Không có overlay_text, bỏ qua bước vẽ chữ lên video.")
+        return True
+
+    font_file = get_vietnamese_font_path()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_output = output_path.with_name(f"temp_text_{output_path.name}")
+
+    drawtext_filters = []
+    colors = ["yellow", "white", "#FFE600", "white"]
+
+    for idx, item in enumerate(overlay_items):
+        if not isinstance(item, dict):
+            continue
+        raw_text = str(item.get("text", "")).strip()
+        if not raw_text:
+            continue
+
+        start_t = max(0.0, float(item.get("start", 0.0)))
+        end_t = max(start_t + 0.5, float(item.get("end", start_t + 3.0)))
+        color = colors[idx % len(colors)]
+
+        # Escape các ký tự đặc biệt theo cú pháp FFmpeg drawtext
+        clean_text = raw_text.replace('\\', '\\\\').replace("'", "").replace(':', '\\:').replace('%', '\\%')
+        
+        # Style chuyên nghiệp cho TikTok:
+        # Font size 42-44, viền đen 3px, box nền mờ đen 50% bo lề 10px, vị trí y=28%
+        flt = (
+            f"drawtext=fontfile='{font_file}':text='{clean_text}':"
+            f"fontsize=42:fontcolor={color}:borderw=3:bordercolor=black:"
+            f"box=1:boxcolor=black@0.52:boxborderw=10:"
+            f"x=(w-text_w)/2:y=(h-text_h)*0.28:enable='between(t,{start_t:.2f},{end_t:.2f})'"
+        )
+        drawtext_filters.append(flt)
+
+    if not drawtext_filters:
+        logger.info("Danh sách filter drawtext rỗng, bỏ qua.")
+        return True
+
+    filter_complex = ",".join(drawtext_filters)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path.resolve()),
+        "-vf", filter_complex,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        str(temp_output.resolve())
+    ]
+
+    try:
+        logger.info(f"🎨 Đang áp dụng {len(drawtext_filters)} câu text overlay lên video bằng FFmpeg...")
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        
+        if temp_output.exists() and temp_output.stat().st_size > 50000:
+            if temp_output.resolve() != output_path.resolve():
+                temp_output.replace(output_path)
+            logger.info(f"✨ Đã vẽ On-screen text overlay lên video thành công: {output_path.name}")
+            return True
+        else:
+            logger.error(f"File video sau khi vẽ text không hợp lệ.")
+            if temp_output.exists():
+                temp_output.unlink(missing_ok=True)
+            return False
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Lỗi FFmpeg drawtext: {e.stderr.decode('utf-8', errors='ignore')}")
+        if temp_output.exists():
+            temp_output.unlink(missing_ok=True)
+        return False
+    except Exception as e:
+        logger.error(f"Lỗi không xác định khi áp dụng text overlay: {e}")
+        if temp_output.exists():
+            temp_output.unlink(missing_ok=True)
+        return False
+
