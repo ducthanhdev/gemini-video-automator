@@ -48,17 +48,8 @@ def generate_smart_caption_and_hashtags(user_description: str, prompt: str = "")
     }
 
 def generate_smart_overlay_text(user_description: str, prompt: str = "") -> list[dict[str, Any]]:
-    """Tạo bộ text overlay (phụ đề chữ nổi bật trên video) gồm 3 nhịp chuẩn TikTok e-commerce."""
-    clean_desc = re.sub(r'https?://\S+', '', user_description or "").strip()
-    clean_desc = re.sub(r'[#\*\_\[\]]', '', clean_desc).strip()
-    first_line = clean_desc.split('\n')[0].strip() if clean_desc else ""
-    prod_name = first_line[:40] if first_line else "sản phẩm hot"
-
-    return [
-        {"text": f"Bí quyết sở hữu {prod_name}?", "start": 0.5, "end": 3.0},
-        {"text": "Thiết kế thông minh - Cực kỳ tiện lợi!", "start": 3.0, "end": 7.0},
-        {"text": "Bấm ngay giỏ hàng nhận ưu đãi! 🛒", "start": 7.0, "end": 9.5}
-    ]
+    """Bỏ hoàn toàn overlay text theo yêu cầu người dùng (không in chữ lên video)."""
+    return []
 
 def clean_visual_prompt(prompt: str) -> str:
     """
@@ -66,6 +57,7 @@ def clean_visual_prompt(prompt: str) -> str:
     1. Lọc bỏ toàn bộ chỉ dẫn âm thanh, nhạc nền, giọng đọc lồng tiếng (tránh làm phân tán model video).
     2. Chuẩn hóa bộ lọc nhạy cảm (safety filter).
     3. Xóa các phân đoạn Scene 1, Scene 2 thừa.
+    4. BẮT BUỘC ĐƯA VÀO CHỈ DẪN KHÔNG IN CHỮ GÌ VÀO VIDEO (No text, no typography, clean footage).
     """
     if not prompt:
         return ""
@@ -83,7 +75,9 @@ def clean_visual_prompt(prompt: str) -> str:
         r'âm thanh sống động[^\.\n]*(\.|$)',
         r'đọc lời giới thiệu[^\.\n]*(\.|$)',
         r'VOICEOVER:?.*$',
-        r'KỊCH BẢN LỒNG TIẾNG:?.*$'
+        r'KỊCH BẢN LỒNG TIẾNG:?.*$',
+        r'OVERLAY_TEXT:?.*$',
+        r'PHỤ ĐỀ MÀN HÌNH:?.*$'
     ]
     for pattern in audio_patterns:
         p = re.sub(pattern, '', p, flags=re.IGNORECASE)
@@ -107,18 +101,25 @@ def clean_visual_prompt(prompt: str) -> str:
     # Làm sạch khoảng trắng và dấu câu thừa
     p = re.sub(r'\s+', ' ', p).strip()
     p = re.sub(r'^[,\.\-\s]+|[,\-\s]+$', '', p).strip()
-    if p and not p.endswith('.'):
+
+    # 4. YÊU CẦU BẮT BUỘC: Đưa vào prompt chỉ dẫn KHÔNG IN BẤT KỲ CHỮ NÀO VÀO VIDEO
+    no_text_instruction = "Khung hình sạch hoàn toàn không in chữ, không có phụ đề hay văn bản trên video."
+    p_lower = p.lower()
+    if "không in chữ" not in p_lower and "không có chữ" not in p_lower and "no text" not in p_lower:
+        if p and not p.endswith('.'):
+            p += '.'
+        p = f"{p} {no_text_instruction}"
+    elif p and not p.endswith('.'):
         p += '.'
 
     return p
 
 def ensure_caption_and_hashtags(data: dict[str, Any], user_description: str = "") -> dict[str, Any]:
-    """Đảm bảo chắc chắn dữ liệu có đầy đủ prompt, voiceover, overlay_text, caption và hashtags không bị rỗng."""
+    """Đảm bảo chắc chắn dữ liệu có đầy đủ prompt, voiceover, caption và hashtags không bị rỗng."""
     prompt = clean_visual_prompt(data.get("prompt") or "")
     voiceover = (data.get("voiceover") or "").strip()
     caption = (data.get("caption") or "").strip()
     hashtags = (data.get("hashtags") or "").strip()
-    overlay_text = data.get("overlay_text")
     
     # Chuẩn hóa voiceover: loại bỏ prefix nếu còn sót
     voiceover = re.sub(r'^(VOICEOVER|KỊCH BẢN LỒNG TIẾNG|LỒNG TIẾNG|THUYẾT MINH)\s*:?\s*', '', voiceover, flags=re.IGNORECASE).strip()
@@ -157,27 +158,11 @@ def ensure_caption_and_hashtags(data: dict[str, Any], user_description: str = ""
             if not voiceover.endswith(('.', '!', '?')):
                 voiceover += '!'
 
-    # Đảm bảo có overlay_text hợp lệ
-    if not isinstance(overlay_text, list) or len(overlay_text) == 0:
-        overlay_text = generate_smart_overlay_text(user_description, prompt)
-    else:
-        # Chuẩn hóa cấu trúc từng mục overlay
-        normalized_overlay = []
-        for item in overlay_text:
-            if isinstance(item, dict) and "text" in item:
-                t = str(item.get("text", "")).strip()
-                if t:
-                    s = float(item.get("start", 0.0))
-                    e = float(item.get("end", s + 3.0))
-                    normalized_overlay.append({"text": t, "start": s, "end": e})
-            elif isinstance(item, str) and item.strip():
-                normalized_overlay.append({"text": item.strip(), "start": 0.0, "end": 3.0})
-        overlay_text = normalized_overlay if normalized_overlay else generate_smart_overlay_text(user_description, prompt)
-
+    # Bỏ hoàn toàn OVERLAY_TEXT theo yêu cầu người dùng (luôn trả về danh sách rỗng)
     return {
         "prompt": prompt,
         "voiceover": voiceover,
-        "overlay_text": overlay_text,
+        "overlay_text": [],
         "caption": caption,
         "hashtags": hashtags
     }
@@ -224,7 +209,7 @@ def parse_prompt_response(text: str) -> dict[str, Any]:
                 return {
                     "prompt": clean_visual_prompt(prompt),
                     "voiceover": voiceover,
-                    "overlay_text": overlay_text,
+                    "overlay_text": [],
                     "caption": caption,
                     "hashtags": hashtags
                 }
@@ -323,7 +308,7 @@ def parse_prompt_response(text: str) -> dict[str, Any]:
     return {
         "prompt": prompt,
         "voiceover": voiceover,
-        "overlay_text": overlay_text,
+        "overlay_text": [],
         "caption": caption,
         "hashtags": hashtags
     }
