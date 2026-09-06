@@ -216,8 +216,9 @@
 
     <!-- Modal trình chiếu video -->
     <div id="video-modal" class="modal">
-        <span class="modal-close" id="modal-close">&times;</span>
+        <button type="button" class="modal-close" id="modal-close" onclick="closeVideoModal(event)" title="Đóng video (Phím Esc)">&times;</button>
         <div class="modal-content">
+            <button type="button" class="modal-card-close" onclick="closeVideoModal(event)" title="Đóng video">&times;</button>
             <video id="modal-video-player" controls autoplay loop>
                 <source id="modal-video-source" src="" type="video/mp4">
                 Trình duyệt của bạn không hỗ trợ phát video này.
@@ -231,6 +232,7 @@
                         <button id="btn-copy-caption" class="btn btn-secondary btn-sm">📝 Copy Caption</button>
                         <button id="btn-copy-hashtags" class="btn btn-secondary btn-sm">🏷️ Copy Hashtags</button>
                         <button id="btn-delete-modal-video" class="btn btn-danger btn-sm" style="background:#ef4444; color:#fff; font-weight:600; margin-left:auto;">🗑️ Xóa Video</button>
+                        <button type="button" onclick="closeVideoModal(event)" class="btn btn-secondary btn-sm" style="background: rgba(255, 255, 255, 0.12); color: #fff; font-weight: 600; border: 1px solid rgba(255,255,255,0.2);">✕ Đóng</button>
                     </div>
                 </div>
                 <div class="voiceover-text" id="modal-voiceover-text" style="user-select: text; -webkit-user-select: text; margin-top: 8px; font-style: italic; color: #a7f3d0; background: rgba(16, 185, 129, 0.1); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #10b981; display: none;"></div>

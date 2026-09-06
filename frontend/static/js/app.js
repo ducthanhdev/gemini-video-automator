@@ -804,27 +804,50 @@ async function deleteSelectedVideos() {
 }
 
 // 10.5. KHỞI TẠO VÀ ĐIỀU KHIỂN MODAL XEM VIDEO
+function closeVideoModal(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const modal = document.getElementById("video-modal");
+    const player = document.getElementById("modal-video-player");
+    if (!modal) return;
+    
+    modal.classList.remove("show");
+    
+    if (player) {
+        try {
+            player.pause();
+            const source = document.getElementById("modal-video-source");
+            if (source) {
+                source.setAttribute("src", "");
+            }
+            player.load();
+        } catch (err) {
+            console.warn("Lỗi dừng video modal:", err);
+        }
+    }
+}
+window.closeVideoModal = closeVideoModal;
+
 function initVideoModal() {
     const modal = document.getElementById("video-modal");
     const closeBtn = document.getElementById("modal-close");
-    const player = document.getElementById("modal-video-player");
     
-    if (!modal || !closeBtn || !player) return;
+    if (closeBtn) {
+        closeBtn.addEventListener("click", (e) => closeVideoModal(e));
+    }
     
-    const closeModal = () => {
-        modal.classList.remove("show");
-        player.pause();
-        const source = document.getElementById("modal-video-source");
-        if (source) {
-            source.setAttribute("src", "");
-        }
-        player.load();
-    };
+    if (modal) {
+        modal.addEventListener("click", (e) => {
+            // Đóng modal khi click ra ngoài vùng nền backdrop
+            if (e.target === modal || e.target.id === "video-modal") {
+                closeVideoModal(e);
+            }
+        });
+    }
 
-    closeBtn.addEventListener("click", closeModal);
-    modal.addEventListener("click", (e) => {
-        if (e.target === modal) {
-            closeModal();
+    // Đóng video modal tiện lợi bằng phím Escape (ESC)
+    document.addEventListener("keydown", (e) => {
+        if ((e.key === "Escape" || e.key === "Esc") && modal && modal.classList.contains("show")) {
+            closeVideoModal(e);
         }
     });
 }

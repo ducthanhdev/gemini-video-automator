@@ -1390,28 +1390,60 @@ textarea {
     position: absolute;
     top: 20px;
     right: 25px;
-    color: var(--text-secondary);
-    font-size: 36px;
+    color: #fff;
+    font-size: 32px;
+    line-height: 1;
     font-weight: 300;
     cursor: pointer;
     transition: all 0.2s ease;
-    z-index: 10001;
+    z-index: 10005;
     user-select: none;
-    width: 44px;
-    height: 44px;
+    -webkit-user-select: none;
+    width: 46px;
+    height: 46px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(15, 23, 42, 0.8);
     border-radius: 50%;
-    border: 1px solid var(--card-border);
+    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    pointer-events: auto !important;
 }
 
 .modal-close:hover {
     color: white;
     background: var(--danger-color);
     border-color: var(--danger-color);
-    transform: rotate(90deg);
+    transform: scale(1.1);
+}
+
+.modal-card-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.2s ease;
+    pointer-events: auto !important;
+}
+
+.modal-card-close:hover {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    transform: scale(1.1);
 }
 
 /* VOICE SELECTION & PREVIEW */
