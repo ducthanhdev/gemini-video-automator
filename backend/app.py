@@ -254,13 +254,20 @@ async def edit_task(task_id: str, task_update: TaskUpdate):
 
 @app.get("/api/status")
 async def get_status():
-    return {
-        "status": manager.status,
-        "current_task_id": manager.current_task_id,
-        "screenshot": manager.screenshot,
-        "error_message": manager.error_message,
-        "queue": manager.queue
-    }
+    return JSONResponse(
+        content={
+            "status": manager.status,
+            "current_task_id": manager.current_task_id,
+            "screenshot": manager.screenshot,
+            "error_message": manager.error_message,
+            "queue": manager.queue
+        },
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @app.post("/api/start")
 async def start_queue():

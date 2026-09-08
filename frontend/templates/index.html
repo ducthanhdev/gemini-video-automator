@@ -162,9 +162,14 @@
                 <div class="card queue-card">
                     <div class="queue-card-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                         <h2 style="margin: 0;"><span class="icon">📋</span> Hàng đợi xử lý</h2>
-                        <button id="btn-clear-queue" onclick="clearAllTasks()" class="btn-task-action btn-delete" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Xóa toàn bộ hàng đợi">
-                            🗑️ Xóa tất cả
-                        </button>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="btn-refresh-queue" onclick="refreshQueue()" class="btn-task-action" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Làm mới hàng đợi">
+                                🔄 Làm mới
+                            </button>
+                            <button id="btn-clear-queue" onclick="clearAllTasks()" class="btn-task-action btn-delete" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Xóa toàn bộ hàng đợi">
+                                🗑️ Xóa tất cả
+                            </button>
+                        </div>
                     </div>
                     <div class="queue-list" id="queue-list">
                         <div class="empty-state">Không có nhiệm vụ nào trong hàng đợi.</div>

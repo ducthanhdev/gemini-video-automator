@@ -114,9 +114,17 @@ class AutomationManager:
     # Forwarding Driver Methods
     async def initialize(self):
         await self.driver.initialize()
+        # Tự động kiểm tra phiên đăng nhập Gemini ngầm để cập nhật trạng thái và Live View tức thì
+        asyncio.create_task(self._auto_detect_initial_status())
         has_pending = any(t.get("status") == "pending" for t in self.queue)
         if has_pending:
             logger.info("Đã tải các nhiệm vụ đang chờ trong hàng đợi. Chờ người dùng nhấn Khởi chạy.")
+
+    async def _auto_detect_initial_status(self):
+        try:
+            await self.driver.check_login_status()
+        except Exception as e:
+            logger.warning(f"Không thể tự động phát hiện phiên đăng nhập ban đầu: {e}")
 
     async def shutdown(self):
         logger.info("Đang tiến hành dọn dẹp và tắt AutomationManager...")

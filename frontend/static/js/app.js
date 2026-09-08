@@ -496,55 +496,96 @@ async function controlQueue(action) {
 
 // 7. POLLING CẬP NHẬT TRẠNG THÁI (STATUS POLLING)
 function startPolling() {
+    // Gọi ngay lập tức lần đầu để nạp danh sách task và trạng thái tức thì
+    pollStatus();
     // Chạy định kỳ mỗi 1.5s
     setInterval(pollStatus, 1500);
 }
 
 async function pollStatus() {
     try {
-        const res = await fetch("/api/status");
-        if (!res.ok) return;
+        const timestamp = Date.now();
+        const res = await fetch(`/api/status?_t=${timestamp}`, {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+                "Pragma": "no-cache",
+                "Cache-Control": "no-cache"
+            }
+        });
+        if (!res.ok) {
+            console.warn("[VeoFlow] Phản hồi status HTTP:", res.status);
+            return;
+        }
         
         const data = await res.json();
         updateUI(data);
     } catch (e) {
         console.error("Lỗi polling status:", e);
-        document.getElementById("server-indicator").className = "status-indicator";
-        document.getElementById("connection-text").innerText = "Mất kết nối API";
+        const serverIndicator = document.getElementById("server-indicator");
+        if (serverIndicator) serverIndicator.className = "status-indicator";
+        const connText = document.getElementById("connection-text");
+        if (connText) connText.innerText = "Mất kết nối API";
     }
 }
 
+// Nút làm mới danh sách hàng đợi thủ công
+async function refreshQueue() {
+    const btn = document.getElementById("btn-refresh-queue");
+    if (btn) {
+        btn.innerHTML = "⏳ Đang tải...";
+        btn.disabled = true;
+    }
+    try {
+        await pollStatus();
+        showToast("📋 Đã đồng bộ hàng đợi nhiệm vụ!");
+    } finally {
+        if (btn) {
+            btn.innerHTML = "🔄 Làm mới";
+            btn.disabled = false;
+        }
+    }
+}
+window.refreshQueue = refreshQueue;
+
 // 8. CẬP NHẬT GIAO DIỆN (UI UPDATE LOGIC)
 function updateUI(data) {
+    if (!data) return;
+
     // Cập nhật kết nối Server
     const serverIndicator = document.getElementById("server-indicator");
-    serverIndicator.className = "status-indicator connected";
-    document.getElementById("connection-text").innerText = "Đã kết nối";
+    if (serverIndicator) serverIndicator.className = "status-indicator connected";
+    const connText = document.getElementById("connection-text");
+    if (connText) connText.innerText = "Đã kết nối";
 
     // Cập nhật Badge trạng thái Browser
     const browserStatus = document.getElementById("browser-status");
-    browserStatus.className = `badge ${data.status}`;
-    browserStatus.innerText = data.status.toUpperCase();
+    if (browserStatus && data.status) {
+        browserStatus.className = `badge ${data.status}`;
+        browserStatus.innerText = String(data.status).toUpperCase();
+    }
 
     // Cập nhật Live View Screenshot
     const imgScreenshot = document.getElementById("browser-screenshot");
     const overlay = document.getElementById("live-overlay");
     const overlayText = document.getElementById("overlay-status-text");
 
-    if (data.screenshot) {
+    if (imgScreenshot && data.screenshot) {
         imgScreenshot.src = `data:image/jpeg;base64,${data.screenshot}`;
         imgScreenshot.classList.remove("screenshot-placeholder");
     }
 
     // Hiển thị Overlay trạng thái trình duyệt nếu cần
-    if (data.status === "waiting_login") {
-        overlay.classList.add("active");
-        overlayText.innerText = "Yêu cầu đăng nhập Google Chrome";
-    } else if (data.status === "idle" && !data.screenshot) {
-        overlay.classList.add("active");
-        overlayText.innerText = "Trình duyệt đang chờ...";
-    } else {
-        overlay.classList.remove("active");
+    if (overlay && overlayText) {
+        if (data.status === "waiting_login") {
+            overlay.classList.add("active");
+            overlayText.innerText = "Yêu cầu đăng nhập Google Chrome";
+        } else if (data.status === "idle" && !data.screenshot) {
+            overlay.classList.add("active");
+            overlayText.innerText = "Trình duyệt đang chờ...";
+        } else {
+            overlay.classList.remove("active");
+        }
     }
 
     // Cập nhật Danh sách Hàng đợi (Queue)
@@ -552,8 +593,8 @@ function updateUI(data) {
 
     // Tự động tải lại Thư viện video khi có bất kỳ nhiệm vụ nào vừa hoàn thành
     if (lastStatusResponse && lastStatusResponse.queue && data.queue) {
-        const prevCompleted = lastStatusResponse.queue.filter(t => t.status === "completed").length;
-        const currCompleted = data.queue.filter(t => t.status === "completed").length;
+        const prevCompleted = lastStatusResponse.queue.filter(t => t && t.status === "completed").length;
+        const currCompleted = data.queue.filter(t => t && t.status === "completed").length;
         if (currCompleted !== prevCompleted || (lastStatusResponse.status === "running" && data.status === "idle")) {
             console.log(`[VeoFlow] Phát hiện video mới (${prevCompleted} -> ${currCompleted}). Tự động tải lại thư viện...`);
             loadVideos();
@@ -566,75 +607,90 @@ function updateUI(data) {
 function updateQueueList(queue, currentTaskId) {
     latestQueueList = queue || [];
     const container = document.getElementById("queue-list");
-    if (!queue || queue.length === 0) {
+    if (!container) return;
+
+    if (!Array.isArray(queue) || queue.length === 0) {
         container.innerHTML = '<div class="empty-state">Không có nhiệm vụ nào trong hàng đợi.</div>';
         return;
     }
 
     let html = "";
     queue.forEach(task => {
-        const isRunning = currentTaskId && task.id === currentTaskId;
-        const isActive = isRunning || (task.status !== "pending" && task.status !== "completed" && task.status !== "failed");
-        const activeClass = isActive ? "active" : "";
-        const progressPercent = task.progress || 0;
-        
-        let errorMsgHtml = "";
-        if (task.error) {
-            errorMsgHtml = `
-                <div class="task-error-container" style="margin-top:8px; display:flex; align-items:flex-start; justify-content:space-between; background:#fff2f2; border:1px solid #ffd1d1; padding:6px 10px; border-radius:4px; gap:8px;">
-                    <div class="task-error-text" style="color:var(--danger-color);font-size:0.8rem;word-break:break-word;flex:1;text-align:left;">Lỗi: ${task.error}</div>
-                    <button onclick="copyErrorToClipboard('${task.id}')" class="btn-task-action btn-copy-error" style="padding:2px 6px; font-size:0.72rem; border-radius:3px; background:#fff; border:1px solid #ffd1d1; color:var(--danger-color); cursor:pointer; font-weight:500;" title="Copy log lỗi">📋 Copy</button>
+        try {
+            if (!task) return;
+            const taskId = task.id || "";
+            const taskStatus = (task.status || "pending").toLowerCase();
+            const taskImages = Array.isArray(task.images) ? task.images : [];
+            const taskDuration = task.duration || 10;
+            const taskRatio = task.ratio || "9:16";
+            const taskDesc = task.user_description || "(Không có mô tả)";
+
+            const isRunning = currentTaskId && taskId === currentTaskId;
+            const isActive = isRunning || (taskStatus !== "pending" && taskStatus !== "completed" && taskStatus !== "failed");
+            const activeClass = isActive ? "active" : "";
+            const progressPercent = typeof task.progress === "number" ? task.progress : 0;
+            
+            let errorMsgHtml = "";
+            if (task.error) {
+                errorMsgHtml = `
+                    <div class="task-error-container" style="margin-top:8px; display:flex; align-items:flex-start; justify-content:space-between; background:#fff2f2; border:1px solid #ffd1d1; padding:6px 10px; border-radius:4px; gap:8px;">
+                        <div class="task-error-text" style="color:var(--danger-color);font-size:0.8rem;word-break:break-word;flex:1;text-align:left;">Lỗi: ${task.error}</div>
+                        <button onclick="copyErrorToClipboard('${taskId}')" class="btn-task-action btn-copy-error" style="padding:2px 6px; font-size:0.72rem; border-radius:3px; background:#fff; border:1px solid #ffd1d1; color:var(--danger-color); cursor:pointer; font-weight:500;" title="Copy log lỗi">📋 Copy</button>
+                    </div>
+                `;
+            }
+
+            const canEdit = (taskStatus === "pending" || taskStatus === "failed") && !isRunning;
+            const canRetry = taskStatus !== "pending" && !isRunning;
+            const hasCaption = !!(task.caption || task.hashtags);
+            
+            let actionsHtml = `
+                <div class="task-actions">
+                    ${hasCaption ? `<button onclick="copyTaskCaption('${taskId}')" class="btn-task-action btn-copy-caption" style="background:#4f46e5; color:#fff;" title="Sao chép bài đăng">📋 Copy Post</button>` : ''}
+                    ${canEdit ? `<button onclick="editTaskPrompt('${taskId}')" class="btn-task-action btn-edit" title="Sửa thông tin">✏️ Sửa</button>` : ''}
+                    ${canRetry ? `<button onclick="retryTask('${taskId}')" class="btn-task-action btn-retry" title="Chạy lại">🔄 Chạy lại</button>` : ''}
+                    <button onclick="deleteTask('${taskId}', '${taskStatus}')" class="btn-task-action btn-delete" title="Xóa nhiệm vụ">🗑️ Xóa</button>
                 </div>
             `;
+
+            const voiceLabels = {
+                "capcut_cogaighoatngon": "Cô Gái Hoạt Ngôn",
+                "capcut_nhongotngao": "Nhỏ Ngọt Ngào",
+                "capcut_thanhnientutin": "Thanh Niên Tự Tin",
+                "capcut_nuphothong": "Nữ Phổ Thông",
+                "capcut_namtram": "Nam Trầm",
+                "capcut_reviewphim": "Review Phim",
+                "hoaimy": "Hoài Mỹ (Edge)",
+                "namminh": "Nam Minh (Edge)"
+            };
+            const voiceText = voiceLabels[task.voice_gender] || task.voice_gender || "Cô Gái Hoạt Ngôn";
+            const shortId = taskId.length > 8 ? taskId.substring(0, 8) + "..." : taskId;
+
+            html += `
+                <div class="queue-item ${activeClass} ${taskStatus}">
+                    <div class="queue-item-header">
+                        <span class="task-id">ID: ${shortId} (${taskDuration}s | ${taskRatio}) <span class="badge-voice" style="margin-left:4px; font-size:0.75rem; background:rgba(99, 102, 241, 0.15); color:#818cf8; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(99, 102, 241, 0.3);">🎙️ ${voiceText}</span>${task.retry_count ? ` <span class="badge-retry" style="margin-left:6px; font-size:0.75rem; background:rgba(245, 158, 11, 0.18); color:#f59e0b; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(245, 158, 11, 0.35);">🔄 Lần thử ${task.retry_count + 1}</span>` : ''}</span>
+                        <span class="task-status ${taskStatus}">${taskStatus.toUpperCase()}</span>
+                    </div>
+                    <div class="task-desc">${taskDesc}</div>
+                    ${task.optimized_prompt ? `<div class="task-prompt-box" style="margin-top:6px; font-size:0.8rem; color:#94a3b8; background:rgba(15,23,42,0.6); padding:6px 10px; border-radius:6px; border-left:3px solid #6366f1;"><strong>🎬 Visual Prompt:</strong> ${task.optimized_prompt}</div>` : ''}
+                    ${task.overlay_text && task.overlay_text.length ? `<div class="task-overlay-box" style="margin-top:6px; font-size:0.8rem; color:#fde047; background:rgba(234,179,8,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #eab308;"><strong>💬 On-Screen Text:</strong> ${task.overlay_text.map(o => `[${o.start}s-${o.end}s: ${o.text}]`).join(' | ')}</div>` : ''}
+                    ${task.voiceover ? `<div class="task-voiceover-box" style="margin-top:6px; font-size:0.8rem; color:#a7f3d0; background:rgba(16,185,129,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #10b981;"><strong>🎙️ Kịch bản lồng tiếng:</strong> ${task.voiceover}</div>` : ''}
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: ${progressPercent}%"></div>
+                    </div>
+                    <div class="task-info-footer">
+                        <span>Tiến trình: ${progressPercent}%</span>
+                        <span>Ảnh: ${taskImages.length}</span>
+                        ${task.retry_count ? `<span style="color:#f59e0b; font-weight:500;">🔄 Đã thử: ${task.retry_count} lần</span>` : ''}
+                    </div>
+                    ${errorMsgHtml}
+                    ${actionsHtml}
+                </div>
+            `;
+        } catch (itemErr) {
+            console.error("Lỗi khi render task item:", itemErr, task);
         }
-
-        const canEdit = (task.status === "pending" || task.status === "failed") && !isRunning;
-        const canRetry = task.status !== "pending" && !isRunning;
-        const hasCaption = !!(task.caption || task.hashtags);
-        
-        let actionsHtml = `
-            <div class="task-actions">
-                ${hasCaption ? `<button onclick="copyTaskCaption('${task.id}')" class="btn-task-action btn-copy-caption" style="background:#4f46e5; color:#fff;" title="Sao chép bài đăng">📋 Copy Post</button>` : ''}
-                ${canEdit ? `<button onclick="editTaskPrompt('${task.id}')" class="btn-task-action btn-edit" title="Sửa thông tin">✏️ Sửa</button>` : ''}
-                ${canRetry ? `<button onclick="retryTask('${task.id}')" class="btn-task-action btn-retry" title="Chạy lại">🔄 Chạy lại</button>` : ''}
-                <button onclick="deleteTask('${task.id}', '${task.status}')" class="btn-task-action btn-delete" title="Xóa nhiệm vụ">🗑️ Xóa</button>
-            </div>
-        `;
-
-        const voiceLabels = {
-            "capcut_cogaighoatngon": "Cô Gái Hoạt Ngôn",
-            "capcut_nhongotngao": "Nhỏ Ngọt Ngào",
-            "capcut_thanhnientutin": "Thanh Niên Tự Tin",
-            "capcut_nuphothong": "Nữ Phổ Thông",
-            "capcut_namtram": "Nam Trầm",
-            "capcut_reviewphim": "Review Phim",
-            "hoaimy": "Hoài Mỹ (Edge)",
-            "namminh": "Nam Minh (Edge)"
-        };
-        const voiceText = voiceLabels[task.voice_gender] || task.voice_gender || "Cô Gái Hoạt Ngôn";
-
-        html += `
-            <div class="queue-item ${activeClass} ${task.status}">
-                <div class="queue-item-header">
-                    <span class="task-id">ID: ${task.id.substring(0, 8)}... (${task.duration}s | ${task.ratio || '9:16'}) <span class="badge-voice" style="margin-left:4px; font-size:0.75rem; background:rgba(99, 102, 241, 0.15); color:#818cf8; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(99, 102, 241, 0.3);">🎙️ ${voiceText}</span>${task.retry_count ? ` <span class="badge-retry" style="margin-left:6px; font-size:0.75rem; background:rgba(245, 158, 11, 0.18); color:#f59e0b; padding:2px 6px; border-radius:4px; font-weight:600; border:1px solid rgba(245, 158, 11, 0.35);">🔄 Lần thử ${task.retry_count + 1}</span>` : ''}</span>
-                    <span class="task-status ${task.status}">${task.status.toUpperCase()}</span>
-                </div>
-                <div class="task-desc">${task.user_description}</div>
-                ${task.optimized_prompt ? `<div class="task-prompt-box" style="margin-top:6px; font-size:0.8rem; color:#94a3b8; background:rgba(15,23,42,0.6); padding:6px 10px; border-radius:6px; border-left:3px solid #6366f1;"><strong>🎬 Visual Prompt:</strong> ${task.optimized_prompt}</div>` : ''}
-                ${task.overlay_text && task.overlay_text.length ? `<div class="task-overlay-box" style="margin-top:6px; font-size:0.8rem; color:#fde047; background:rgba(234,179,8,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #eab308;"><strong>💬 On-Screen Text:</strong> ${task.overlay_text.map(o => `[${o.start}s-${o.end}s: ${o.text}]`).join(' | ')}</div>` : ''}
-                ${task.voiceover ? `<div class="task-voiceover-box" style="margin-top:6px; font-size:0.8rem; color:#a7f3d0; background:rgba(16,185,129,0.1); padding:6px 10px; border-radius:6px; border-left:3px solid #10b981;"><strong>🎙️ Kịch bản lồng tiếng:</strong> ${task.voiceover}</div>` : ''}
-                <div class="progress-container">
-                    <div class="progress-bar" style="width: ${progressPercent}%"></div>
-                </div>
-                <div class="task-info-footer">
-                    <span>Tiến trình: ${progressPercent}%</span>
-                    <span>Ảnh: ${task.images.length}</span>
-                    ${task.retry_count ? `<span style="color:#f59e0b; font-weight:500;">🔄 Đã thử: ${task.retry_count} lần</span>` : ''}
-                </div>
-                ${errorMsgHtml}
-                ${actionsHtml}
-            </div>
-        `;
     });
     
     container.innerHTML = html;
